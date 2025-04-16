@@ -12,7 +12,8 @@ Console.WriteLine("Testing can start");
 //Pokusy.StringCompare("Din", "Din");
 //Pokusy.StringCompare("DIn", "Din");
 //Pokusy.StringCompare("lDIn", "Din");
-Pokusy.MaxString();
-
+//Pokusy.MaxString();
+//Pokusy.ParallelLoop();
+MainClass.Main();
 
 

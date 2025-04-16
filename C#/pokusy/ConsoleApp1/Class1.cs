@@ -172,6 +172,23 @@ namespace ConsoleApp
             var mx2 = lst.Max(r => { bool se = Int64.TryParse(r.Value, out long a); return se ? a:-1;});
             Console.WriteLine($"Max(no conversion): {mx1}\tMax(conversion to int64): {mx2}");
         }
+        
+        public static void ParallelLoop()
+        {
+            object sync = new object();
+        int sum = 0;
+            Parallel.For(1, 1000, (i) => {
+                //lock (sync) sum = sum + i; // lock is necessary
+                int loc = 0;
+
+                loc = i;
+                lock (sync) sum += loc;
+                // As a practical matter, ensure this `parallel for` executes
+                // on multiple threads by simulating a lengthy operation.
+                Thread.Sleep(1);
+            });
+            Console.WriteLine("Correct answer should be 499500.  sum is: {0}", sum);
+        }
     }
     public class Reading
     {
