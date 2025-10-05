@@ -1,0 +1,9 @@
+mame rpm v4.8
+
+
+postup:
+python provides.py > provides.sql
+python requires.py > requires.sql
+psql -d postgres -U root -f structures.sql
+psql -d postgres -U root -f provides.sql
+psql -d postgres -U root -f requires.sql

@@ -1,0 +1,16 @@
+               pkg_name                | pkg_size_mb | pkg_size  
+---------------------------------------+-------------+-----------
+ kernel-firmware                       |         415 | 435440052
+ kernel-default                        |         296 | 310675540
+ kernel-default                        |         234 | 246372031
+ libreoffice                           |         205 | 215759847
+ google-chrome-stable                  |         177 | 186251693
+ MozillaFirefox                        |         154 | 161670321
+ MozillaThunderbird                    |         152 | 159621320
+ libqt5-qtwebengine                    |         135 | 142040442
+ mariadb                               |         122 | 128542358
+ glibc-locale                          |         109 | 115049897
+ MozillaThunderbird-translations-other |         106 | 111936681
+ digikam                               |         102 | 107861773
+(12 rows)
+
