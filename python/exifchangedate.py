@@ -4,20 +4,22 @@ from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS, IFD
 import datetime
 import piexif
+import os
 
-        # Set the date time in different EXIF fields
-        # 36867 = DateTimeOriginal
-        # 36868 = DateTimeDigitized
-        # 306 = DateTime
-        # exif_dict['Exif'][36867] = datetime_str.encode('utf-8')
-        # exif_dict['Exif'][36868] = datetime_str.encode('utf-8')
-        # exif_dict['0th'][306] = datetime_str.encode('utf-8')
-def set_image_datetime(image_path, delta):
+# Set the date time in different EXIF fields
+# 36867 = DateTimeOriginal
+# 36868 = DateTimeDigitized
+# 306 = DateTime
+# exif_dict['Exif'][36867] = datetime_str.encode('utf-8')
+# exif_dict['Exif'][36868] = datetime_str.encode('utf-8')
+# exif_dict['0th'][306] = datetime_str.encode('utf-8')
+def set_image_datetime(image_path, image_file, delta):
     try:
-        print(f"Processing {image_path}")
+        fname = image_path + image_file
+        print(f"Processing {fname}", end = ' ')
         data = None
         # Load existing EXIF data
-        exif_dict = piexif.load(image_path)
+        exif_dict = piexif.load(fname)
         #print(exif_dict)  # Debugging line to see the entire EXIF data structure
         dateOriginal = exif_dict['Exif'].get(36867, b'--').decode('utf-8', errors='ignore')
         dateDigitized = exif_dict['Exif'].get(36868, b'--').decode('utf-8', errors='ignore')    
@@ -26,24 +28,27 @@ def set_image_datetime(image_path, delta):
             new_timestamp = datetime.datetime.strptime(dateOriginal, "%Y:%m:%d %H:%M:%S") + delta
             exif_dict['Exif'][36867] = new_timestamp.strftime("%Y:%m:%d %H:%M:%S").encode('utf-8')
         if dateDigitized != '--':
-            #DateTimeOriginal
+            #DateTimeDigitized
             new_timestamp = datetime.datetime.strptime(dateDigitized, "%Y:%m:%d %H:%M:%S") + delta
             exif_dict['Exif'][36868] = new_timestamp.strftime("%Y:%m:%d %H:%M:%S").encode('utf-8')
 
         if dateOriginal != '--' or dateDigitized != '--':
             # Open and save image with new EXIF data
-            im = Image.open(image_path)
+            im = Image.open(fname)
             exif_bytes = piexif.dump(exif_dict)
-    
-            im.save(image_path, exif=exif_bytes, quality='keep')
-            print(f"Successfully updated {dateOriginal if dateOriginal != '--' else dateDigitized }->{new_timestamp.strftime("%Y:%m:%d %H:%M:%S")}")
+            new_file = new_timestamp.strftime("%Y%m%d-%H%M%S")          
+            i = 0
+            while (os.path.isfile(image_path  + new_file + ('' if i == 0 else '_' + str(i)) + '.JPG')):
+                i += 1
+            im.save(image_path  + new_file + ('' if i == 0 else '_' + str(i)) +'.JPG', exif=exif_bytes, quality='keep')
+            print(f"updated {dateOriginal if dateOriginal != '--' else dateDigitized }->{new_timestamp.strftime("%Y:%m:%d %H:%M:%S")}")
         else:
             print(" No Timestamp found in EXIF data")
         
     except Exception as e:
         print(f"Error setting datetime: {str(e)}")
 
-def print_exif(fname: str):
+def print_allexif(fname: str):
     img = Image.open(fname)
     exif = img.getexif()
 
@@ -68,10 +73,22 @@ def print_exif(fname: str):
         except KeyError:
             pass
 
+def print_DateOriginal(imagepath: str):
+    try:
+        # Load existing EXIF data
+        exif_dict = piexif.load(imagepath)
+        # 36867 = DateTimeOriginal
+        dateOriginal = exif_dict['Exif'].get(36867, b'--').decode('utf-8', errors='ignore')
+        print(f"{imagepath}: {dateOriginal}")
+    except Exception as e:
+        print(f"Error setting datetime: {str(e)}")
 
 # Example usage
 if __name__ == "__main__":
-    # Replace with your image path
-    image_path = "C:\\Users\\A410442\\Downloads\\DSC_0191.jpg" #20100403-151405.jpg DSC_0191.jpg 20250920_123657.jpg"
-    #set_image_datetime(image_path, datetime.timedelta(days=23*365 + 7*31 + 8, hours=8, minutes=30))
-    print_exif(image_path)
+    # image path with pictures
+    image_path = "C:\\home\\rodina\\fotografie\\nove\\zuzka50\\test\\"
+   
+    for image_file in os.listdir(image_path):
+        if os.path.isfile(image_path + '\\' + image_file) and image_file.split('.')[-1] == 'JPG':
+            # print_DateOriginal(image_path + '\\' + image_file)
+            set_image_datetime(image_path, image_file, datetime.timedelta(days=23*365 + 7*31 + 8, hours=8, minutes=30))
