@@ -1,5 +1,15 @@
-#pip install Pillow
-#pip install piexif
+#!/usr/bin/env python3
+"""
+Change EXIF date/time of images by a given delta, developed to fix Zuzana's 50th birthday photos.
+delta is added to DateTimeOriginal and DateTimeDigitized fields.
+delta =  23 years, 7 months, 8 days, 8 hours, 30 minutes
+
+Usage:
+  python exifchangedate.py
+
+Requires:  Pillow  piexif
+"""
+
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS, IFD
 import datetime
@@ -86,7 +96,7 @@ def print_DateOriginal(imagepath: str):
 # Example usage
 if __name__ == "__main__":
     # image path with pictures
-    image_path = "C:\\home\\rodina\\fotografie\\nove\\zuzka50\\test\\"
+    image_path = "C:\\home\\rodina\\fotografie\\nove\\zuzka50\\"
    
     for image_file in os.listdir(image_path):
         if os.path.isfile(image_path + '\\' + image_file) and image_file.split('.')[-1] == 'JPG':
