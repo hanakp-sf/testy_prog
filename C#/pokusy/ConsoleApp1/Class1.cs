@@ -25,6 +25,18 @@ namespace ConsoleApp
 
             Console.WriteLine($"Date={dt}, Back3months={dtMonths:yyyy-MM-dd}, Back92days={dtDays:yyyy-MM-dd}");
         }
+
+        public static void testConvert()
+        {
+            var value = 0.00;
+            string item = "-0.009999999776482582";
+
+            value = Math.Round(Convert.ToDouble(item), 0);
+
+            Console.WriteLine($"{value}");
+        }
+
+
     }
     public class Pokusy
     {
