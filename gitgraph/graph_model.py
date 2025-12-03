@@ -18,8 +18,7 @@ class GraphModel:
         self.vertices = {}
         self.edges = []
         self._next_vid = 1
-        # keep numeric counter for fallback/default labels if needed
-        self._branch_positions = {}  # branch_name -> (x, y) for layout
+        # keep numeric counter for fallback/default labels if needed        
         self._commits_metadata = {}  # hash -> {'parents': [hashes]}
 
     def add_vertex(self, x, y, label, rx, ry, vtype='commit'):
@@ -37,7 +36,7 @@ class GraphModel:
         if label in self.vertices:
             return False
         # add vertex keyed by label
-        self.vertices[label] = {'x': x, 'y': y, 'rx': rx, 'ry': ry, 'label': label, 'type': vtype}
+        self.vertices[label] = {'x': x, 'y': y, 'rx': rx, 'ry': ry, 'type': vtype}
         # increment the numeric counter for any fallback naming
         self._next_vid += 1
         return label
@@ -53,10 +52,6 @@ class GraphModel:
         if label in self.vertices:
             self.vertices[label]['x'] = x
             self.vertices[label]['y'] = y
-    def update_vertex_size(self, vid, rx, ry):
-        if vid in self.vertices:
-            self.vertices[vid]['rx'] = rx
-            self.vertices[vid]['ry'] = ry
 
     def add_edge(self, src_label, dst_label, edge_type=True, label=None):
         """Add an edge between vertex labels.
@@ -139,20 +134,12 @@ class GraphModel:
 
         branches = list(refs.keys())
         x = x0
-        # record branch positions and tip hashes for commit layout
-        self._branch_positions = {}
         self._branch_tips = getattr(self, '_branch_tips', {})
         
         for b in branches:
             tip = refs.get(b)
             # add branch vertex
             added = self.add_vertex(x, y, b, rx, ry, vtype='branch')
-            if added:
-                self._branch_positions[b] = (x, y)
-            else:
-                v = self.vertices.get(b)
-                if v:
-                    self._branch_positions[b] = (v['x'], v['y'])
             if tip:
                 self._branch_tips[b] = tip
                 
@@ -162,11 +149,12 @@ class GraphModel:
             if commit_label not in self.vertices:
                 # position commit below branch
                 self.add_vertex(x, y + 80, commit_label, 50, 18, vtype='commit')
-                # connect branch to tip commit (undirected edge)
-                try:
-                    self.add_edge(b, commit_label, edge_type=False, label=None)
-                except Exception:
-                    pass
+
+            # connect branch to tip commit (undirected edge)
+            try:
+                self.add_edge(b, commit_label, edge_type=False, label=None)
+            except Exception:
+                pass
             
             x += spacing
         return True
@@ -251,10 +239,10 @@ class GraphModel:
         if not repo_dir or not os.path.isdir(repo_dir):
             return False
         # check if branch position is known
-        if branch not in self._branch_positions:
+        if branch not in self.vertices:
             return False
 
-        bx, by = self._branch_positions[branch]
+        bx = self.vertices[branch]['x']
         # use stored tip hash if available (faster than resolving branch name)
         start_ref = self._branch_tips.get(branch, branch)
         
@@ -267,6 +255,7 @@ class GraphModel:
             return False
 
         chashes = [line.strip() for line in out.splitlines() if line.strip()]
+        print(chashes)
         # batch-fetch parent info using git cat-file --batch
         parents_map = {}
         if chashes:
@@ -333,11 +322,11 @@ class GraphModel:
             parents = self._commits_metadata.get(h, {}).get('parents', [])
             if parents:
                 parent = parents[0]
-                parent_label = f'{parent[:7]}'
+                parent_label = f'{parent[:8]}'
                 if parent_label not in self.vertices:
                     self.add_vertex(bx + 40, y + y_spacing/2, parent_label, rx, ry, vtype='commit')
                 try:
-                    self.add_edge(label, parent_label, edge_type=True, label=None)
+                    self.add_edge(parent_label, label, edge_type=True, label=None)
                 except Exception:
                     pass
             prev_label = label

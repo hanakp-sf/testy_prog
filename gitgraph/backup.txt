@@ -1,3 +1,16 @@
+
+to do:
+- urobit gui.render_model tak, ze prebehne gui model and graph model tak ze ak existuje vrchol alebo hrana v graph modeli,
+ tak ju prida do gui modelu
+- DONE upravit graph model tak, ze label nie je property vrcholu, staci ak je id vrcholu
+- upravit graph model tak, ze rx, ry nie je property vrcholu, ak to treba, nech to je sucastou gui modelu
+- DONE remove _branch_position, da sa nahradit hladanim v zozname vrcholov
+- DONE odstranit right-click-drag, je to na presuvanie hran medzi vrcholmi
+- DONE pouzit tagging pre canvas and find_withtag("current") pre najdenie focused canvas
+- remove vertex_by_canvas from GUI
+
+priklad na round rectangle:
+
         oval = self.round_rectangle(x - rx, y - ry, x + rx, y + ry, r=10,
                                     fill='lightblue', outline='black', width=2)
 

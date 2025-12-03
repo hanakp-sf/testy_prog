@@ -25,18 +25,17 @@ class GraphGUI(tk.Tk):
             'container': 'lightgray',
             'file': 'khaki'
         }
+        # canvas types
+        self.RECT = 'rect'
+        self.TEXT = 'text'
 
         # Model and GUI mappings
         self.model = GraphModel()
-        self.canvas_vertices = {}  # vid -> {'rect', 'text'}
-        self.vertex_by_canvas = {}  # canvas_id -> vid
+        self.vertex_by_canvas = {}  # canvas_id -> vid           canvas.gettags(canvas_id)[0]
         self.edges = []  # (src_vid, dst_vid, line_id, label_id)
 
         self._drag_data = {'vertex': None, 'x': 0, 'y': 0}
-        self._edge_src = None
-        self._temp_line = None
         self._repo_dir = None  # set if loading from git repo
-        self._lazy_load_enabled = False  # enable lazy loading on first interaction
 
         # Bindings
         self.canvas.bind('<Button-1>', self.on_left_button_down)
@@ -44,8 +43,6 @@ class GraphGUI(tk.Tk):
         self.canvas.bind('<ButtonRelease-1>', self.on_left_button_up)
 
         self.canvas.bind('<Button-3>', self.on_right_button_down)
-        self.canvas.bind('<B3-Motion>', self.on_right_button_drag)
-        self.canvas.bind('<ButtonRelease-3>', self.on_right_button_up)
         
         # Context menu for canvas (right-click on empty area)
         self._context_click = None
@@ -96,7 +93,13 @@ class GraphGUI(tk.Tk):
             h = font.metrics('ascent') + font.metrics('descent') if hasattr(font, 'metrics') else int(w * 0.2)
         return w, h
 
-      
+    # --- vid -> canvas_id of rectangle
+    def _get_vertex_rect(self, vid):
+        return self.canvas.find_withtag( vid + ' && ' + self.RECT )[0]
+    
+    # --- vid -> canvas_id of label
+    def _get_vertex_text(self, vid):
+        return self.canvas.find_withtag( vid + ' && ' + self.TEXT )[0]    
     
     def create_vertex(self, x, y, r=24, label=None, vtype=None):
         lbl = label or f"v{self.model._next_vid}"
@@ -127,25 +130,21 @@ class GraphGUI(tk.Tk):
             outline_color = 'black'
             outline_width = 2
         rect = self.canvas.create_rectangle(x - rx, y - ry, x + rx, y + ry,
-                            fill=fill_color, outline=outline_color, width=outline_width)
-        text = self.canvas.create_text(x, y, text=lbl)
+                            fill=fill_color, outline=outline_color, width=outline_width, tags = [lbl,  self.RECT])
+        text = self.canvas.create_text(x, y, text=lbl, tags= [lbl , self.TEXT])
 
-        self.canvas_vertices[vid] = {'rect': rect, 'text': text}
         self.vertex_by_canvas[rect] = vid
         self.vertex_by_canvas[text] = vid
         return vid
 
     def delete_vertex(self, vid):
         # remove canvas items
-        cv = self.canvas_vertices.get(vid)
-        if not cv:
-            return
         try:
-            self.canvas.delete(cv.get('rect'))
+            self.canvas.delete(self._get_vertex_rect(vid))
         except Exception:
             pass
         try:
-            self.canvas.delete(cv.get('text'))
+            self.canvas.delete(self._get_vertex_text(vid))
         except Exception:
             pass
 
@@ -167,7 +166,6 @@ class GraphGUI(tk.Tk):
         for cid in to_remove:
             del self.vertex_by_canvas[cid]
 
-        del self.canvas_vertices[vid]
         # update model
         self.model.delete_vertex(vid)
 
@@ -175,6 +173,7 @@ class GraphGUI(tk.Tk):
         items = self.canvas.find_overlapping(x, y, x, y)
         for item in reversed(items):
             if item in self.vertex_by_canvas:
+                print(f"Found vertex at ({x},{y}): canvas item {item}, vid {self.vertex_by_canvas[item]}, tags {self.canvas.gettags(item)}")
                 return self.vertex_by_canvas[item]
         return None
 
@@ -285,7 +284,7 @@ class GraphGUI(tk.Tk):
             return
         else:
             # trigger lazy loading on first interaction if a branch is clicked
-            if self._lazy_load_enabled and self._repo_dir:
+            if self._repo_dir:
                 self._trigger_lazy_load(vid)
             # start dragging vertex
             self._drag_data['vertex'] = vid
@@ -293,7 +292,7 @@ class GraphGUI(tk.Tk):
             self._drag_data['y'] = y
             # highlight
             try:
-                self.canvas.itemconfig(self.canvas_vertices[vid].get('rect'), outline='red')
+                self.canvas.itemconfig(self._get_vertex_rect(vid), outline='red')
             except Exception:
                 pass
 
@@ -303,14 +302,14 @@ class GraphGUI(tk.Tk):
             return
         dx = event.x - self._drag_data['x']
         dy = event.y - self._drag_data['y']
-        cv = self.canvas_vertices[vid]
+
         # move shapes (rect + text)
         try:
-            self.canvas.move(cv.get('rect'), dx, dy)
+            self.canvas.move(self._get_vertex_rect(vid), dx, dy)
         except Exception:
             pass
         try:
-            self.canvas.move(cv['text'], dx, dy)
+            self.canvas.move(self._get_vertex_text(vid), dx, dy)
         except Exception:
             pass
         # update model position
@@ -326,7 +325,7 @@ class GraphGUI(tk.Tk):
         if vid:
             # unhighlight
             try:
-                self.canvas.itemconfig(self.canvas_vertices[vid].get('rect'), outline='black')
+                self.canvas.itemconfig(self._get_vertex_rect(vid), outline='black')
             except Exception:
                 pass
         self._drag_data['vertex'] = None
@@ -345,26 +344,6 @@ class GraphGUI(tk.Tk):
                 except Exception:
                     pass
             return
-        self._edge_src = vid
-        v = self.model.vertices[vid]
-        # start temporary line
-        self._temp_line = self.canvas.create_line(v['x'], v['y'], x, y, dash=(3, 5), fill='gray')
-
-    def on_right_button_drag(self, event):
-        if not self._temp_line:
-            return
-        src = self.model.vertices[self._edge_src]
-        self.canvas.coords(self._temp_line, src['x'], src['y'], event.x, event.y)
-
-    def on_right_button_up(self, event):
-        if not self._temp_line or not self._edge_src:
-            self._cleanup_temp_edge()
-            return
-        dst = self.find_vertex_at(event.x, event.y)
-        src = self._edge_src
-        if dst and dst != src:
-            self.create_edge(src, dst)
-        self._cleanup_temp_edge()
 
     def _context_add_vertex(self):
         """Create a vertex at the last right-click context position.
@@ -428,21 +407,13 @@ class GraphGUI(tk.Tk):
         except Exception as e:
             print(f"Error printing model: {e}")
 
-    def _cleanup_temp_edge(self):
-        if self._temp_line:
-            try:
-                self.canvas.delete(self._temp_line)
-            except Exception:
-                pass
-        self._temp_line = None
-        self._edge_src = None
 
     def on_delete_key(self, event):
         # delete currently highlighted vertex (red outline)
         to_delete = None
-        for vid, cv in self.canvas_vertices.items():
+        for vid in self.model.vertices:
             try:
-                cfg = self.canvas.itemcget(cv.get('rect'), 'outline')
+                cfg = self.canvas.itemcget(self._get_vertex_rect(vid), 'outline')
             except Exception:
                 cfg = None
             if cfg == 'red':
@@ -453,7 +424,7 @@ class GraphGUI(tk.Tk):
     
     def _trigger_lazy_load(self, branch_label):
         """Load commits for a branch on-demand if it's a branch vertex."""
-        if not self._repo_dir or not self._lazy_load_enabled:
+        if not self._repo_dir:
             return
         v = self.model.vertices.get(branch_label)
         if not v or v.get('type') != 'branch':
@@ -468,19 +439,17 @@ class GraphGUI(tk.Tk):
             pass
 
     # ------------------ Model rendering ------------------
-    def _render_model2(self):
-        pass
     def _render_model(self):
         """Render all vertices and edges from the model into the canvas."""
         # clear any existing GUI items
-        for vid, cv in list(self.canvas_vertices.items()):
+        for vid in self.model.vertices:
             try:
                 try:
-                    self.canvas.delete(cv.get('rect'))
+                    self.canvas.delete(self._get_vertex_rect(vid))
                 except Exception:
                     pass
                 try:
-                    self.canvas.delete(cv.get('text'))
+                    self.canvas.delete(self._get_vertex_text(vid))
                 except Exception:
                     pass
             except Exception:
@@ -494,19 +463,18 @@ class GraphGUI(tk.Tk):
                     self.canvas.delete(label_id)
             except Exception:
                 pass
-        self.canvas_vertices.clear()
         self.vertex_by_canvas.clear()
         self.edges.clear()
 
         # create GUI items for vertices using create_vertex
         # collect vertex data first to avoid modifying dict during iteration
-        vertex_data = [(vid, v.get('label', f'v{vid}'), v['x'], v['y'], v.get('type', 'commit')) 
+        vertex_data = [(vid, v['x'], v['y'], v.get('type', 'commit')) 
                    for vid, v in self.model.vertices.items()]
         # clear model vertices and re-add via create_vertex
         self.model.vertices.clear()
         self.model._next_vid = 1
-        for vid, lbl, x, y, vtype in vertex_data:
-            self.create_vertex(x, y, r=24, label=lbl, vtype=vtype)
+        for vid, x, y, vtype in vertex_data:
+            self.create_vertex(x, y, r=24, label=vid, vtype=vtype)
 
         # create GUI items for edges (do not add to model — it's already present)
         for edge in self.model.edges:
@@ -566,5 +534,4 @@ if __name__ == '__main__':
     app = GraphGUI(model=model)
     # enable lazy loading: commits will be loaded when user clicks on branch vertices
     app._repo_dir = repo_dir
-    app._lazy_load_enabled = True
     app.mainloop()
