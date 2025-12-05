@@ -1,7 +1,7 @@
 """Graph data model separated from GUI.
 
 Contains class GraphModel: simple in-memory directed graph with vertex
-attributes (x,y,rx,ry,label) and edge list.
+attributes (x,y,label) and edge list.
 """
 
 import os
@@ -10,18 +10,19 @@ import subprocess
 class GraphModel:
     """Data-only graph model: vertices and directed edges.
 
-    vertices: dict label -> {'x','y','rx','ry','label','type'}
+    vertices: dict label -> {'x','y','type'}
     edges: list of {'src':src_label, 'dst':dst_label, 'oriented':True|False, 'label':str|None}
     """
 
     def __init__(self):
+        self.repo_dir = None  
         self.vertices = {}
         self.edges = []
         self._next_vid = 1
         # keep numeric counter for fallback/default labels if needed        
         self._commits_metadata = {}  # hash -> {'parents': [hashes]}
 
-    def add_vertex(self, x, y, label, rx, ry, vtype='commit'):
+    def add_vertex(self, x, y, label, vtype='commit'):
         """Add a vertex keyed by `label`.
 
         Requirements:
@@ -33,10 +34,11 @@ class GraphModel:
         if not label or not str(label).strip():
             return False
         label = str(label)
+        #already exists
         if label in self.vertices:
-            return False
+            return label
         # add vertex keyed by label
-        self.vertices[label] = {'x': x, 'y': y, 'rx': rx, 'ry': ry, 'type': vtype}
+        self.vertices[label] = {'x': x, 'y': y, 'type': vtype}
         # increment the numeric counter for any fallback naming
         self._next_vid += 1
         return label
@@ -94,7 +96,7 @@ class GraphModel:
         sample_types = ['branch', 'commit', 'container', 'file', 'commit']
         for i, (label, (x, y)) in enumerate(coords.items()):
             vtype = sample_types[i % len(sample_types)]
-            added = self.add_vertex(x, y, label, default_rx, default_ry, vtype=vtype)
+            added = self.add_vertex(x, y, label, vtype=vtype)
             if added:
                 ids[label] = added
 
@@ -110,7 +112,7 @@ class GraphModel:
             if s in ids and d in ids:
                 self.add_edge(s, d, edge_type=t, label=lbl)
 
-    def load_branches(self, repo_dir, x0=100, y=60, spacing=150, rx=60, ry=20):
+    def load_branches(self, repo_dir, x0=100, y=60, spacing=150):
         """Load branch names from a local git repository and add them as vertices.
 
         Positions are laid out horizontally starting at (x0, y).
@@ -127,6 +129,7 @@ class GraphModel:
         if not gitdir:
             return False
 
+        self.repo_dir = repo_dir
         try:
             refs = self._read_refs_from_gitdir(gitdir)
         except Exception:
@@ -139,7 +142,7 @@ class GraphModel:
         for b in branches:
             tip = refs.get(b)
             # add branch vertex
-            added = self.add_vertex(x, y, b, rx, ry, vtype='branch')
+            added = self.add_vertex(x, y, b, vtype='branch')
             if tip:
                 self._branch_tips[b] = tip
                 
@@ -148,15 +151,16 @@ class GraphModel:
             commit_label = f'{short_hash}'
             if commit_label not in self.vertices:
                 # position commit below branch
-                self.add_vertex(x, y + 80, commit_label, 50, 18, vtype='commit')
+                self.add_vertex(x, y + 80, commit_label, vtype='commit')
 
             # connect branch to tip commit (undirected edge)
             try:
                 self.add_edge(b, commit_label, edge_type=False, label=None)
             except Exception:
                 pass
-            
+            self.load_parents_for_commit(tip, x , y + 80)
             x += spacing
+
         return True
 
     def _resolve_git_dir(self, repo_dir):
@@ -227,7 +231,44 @@ class GraphModel:
 
         return refs
 
-    def load_commits_for_branch(self, repo_dir, branch, per_branch=20, y_start=140, y_spacing=80, rx=50, ry=18):
+    def load_parents_for_commit(self, commit_hash, x=100, y=60, spacing=150):
+        """Load parent commit hashes for a given commit hash.
+        Positions are laid out horizontally starting at (x, y).
+        Returns True on success, False on failure.
+        """
+        try:
+            proc = subprocess.run(['git', '-C', self.repo_dir, 'cat-file', '-p', commit_hash],
+                                  capture_output=True, text=True, check=True)
+            out = proc.stdout
+        except Exception:
+            return False
+
+        parents = []
+        #print(out)
+        for line in out.splitlines():
+            line = line.strip()
+            if line.startswith('parent '):
+                parts = line.split()
+                if len(parts) == 2:
+                    parents.append(parts[1])
+            elif line == '':
+                break  # end of headers
+            
+        # add parent commits as vertices
+        for p in parents:
+            short_hash = p[:8]
+            parent_label = f'{short_hash}'
+            if parent_label not in self.vertices:
+                self.add_vertex(x, y + 80, parent_label, vtype='commit')
+            # connect commit to parent
+            try:
+                self.add_edge(parent_label, f'{commit_hash[:8]}', edge_type=True, label='parent')
+            except Exception:
+                pass
+            x += spacing
+        return True
+
+    def load_commits_for_branch(self, repo_dir, branch, per_branch=20, y_start=140, y_spacing=80):
         """Lazy-load commits for a single branch on-demand.
 
         If branch commits are already loaded, returns True without re-loading.
@@ -255,7 +296,7 @@ class GraphModel:
             return False
 
         chashes = [line.strip() for line in out.splitlines() if line.strip()]
-        print(chashes)
+        #print(chashes)
         # batch-fetch parent info using git cat-file --batch
         parents_map = {}
         if chashes:
@@ -307,7 +348,7 @@ class GraphModel:
 
             label = f'{h[:8]}'
             if label not in self.vertices:
-                added = self.add_vertex(bx, y, label, rx, ry, vtype='commit')
+                added = self.add_vertex(bx, y, label, vtype='commit')
             else:
                 added = label
 
@@ -324,9 +365,9 @@ class GraphModel:
                 parent = parents[0]
                 parent_label = f'{parent[:8]}'
                 if parent_label not in self.vertices:
-                    self.add_vertex(bx + 40, y + y_spacing/2, parent_label, rx, ry, vtype='commit')
+                    self.add_vertex(bx + 40, y + y_spacing/2, parent_label, vtype='commit')
                 try:
-                    self.add_edge(parent_label, label, edge_type=True, label=None)
+                    self.add_edge(parent_label, label, edge_type=True, label='parent')
                 except Exception:
                     pass
             prev_label = label
