@@ -70,48 +70,6 @@ class GraphModel:
         self.edges.append({'src': src_label, 'dst': dst_label, 'oriented': edge_type, 'label': label})
         return True
 
-    def load_sample(self):
-        """Populate the model with a 5-vertex, 7-edge sample graph.
-
-        This is model-only: positions and simple radii are set here. GUI may
-        re-measure labels and adjust rx accordingly when rendering.
-        """
-        # clear existing
-        self.vertices.clear()
-        self.edges.clear()
-        self._next_vid = 1
-
-        coords = {
-            'main': (150, 150),
-            'fe78df': (350, 150),
-            '89d146': (250, 250),
-            'a45b90': (150, 350),
-            '5c374f': (350, 350),
-        }
-        ids = {}
-        # default radii
-        default_rx = 40
-        default_ry = 20
-        # assign a variety of types for sample vertices
-        sample_types = ['branch', 'commit', 'container', 'file', 'commit']
-        for i, (label, (x, y)) in enumerate(coords.items()):
-            vtype = sample_types[i % len(sample_types)]
-            added = self.add_vertex(x, y, label, vtype=vtype)
-            if added:
-                ids[label] = added
-
-        edges = [
-            ('main', 'fe78df', False, None),
-            ('fe78df', '89d146', True, 'edge3'),
-            ('89d146', 'a45b90', True, 'edge4'),
-            ('a45b90', 'fe78df', True, 'edge5'),
-            ('89d146', '5c374f', True, 'edge6')
-        ]
-        for s, d, t, lbl in edges:
-            # ids store labels, so pass labels directly
-            if s in ids and d in ids:
-                self.add_edge(s, d, edge_type=t, label=lbl)
-
     def load_branches(self, repo_dir, x0=100, y=60, spacing=150):
         """Load branch names from a local git repository and add them as vertices.
 
@@ -146,19 +104,19 @@ class GraphModel:
             if tip:
                 self._branch_tips[b] = tip
                 
-            # add tip commit vertex directly below branch (y + 80)
+            # add tip commit vertex directly below branch (y + 40)
             short_hash = tip[:8]
             commit_label = f'{short_hash}'
             if commit_label not in self.vertices:
                 # position commit below branch
-                self.add_vertex(x, y + 80, commit_label, vtype='commit')
+                self.add_vertex(x, y + 40, commit_label, vtype='commit')
 
             # connect branch to tip commit (undirected edge)
             try:
                 self.add_edge(b, commit_label, edge_type=False, label=None)
             except Exception:
                 pass
-            self.load_parents_for_commit(tip, x , y + 80)
+            self.load_commit_related(tip, x , y + 40*2)
             x += spacing
 
         return True
@@ -231,8 +189,8 @@ class GraphModel:
 
         return refs
 
-    def load_parents_for_commit(self, commit_hash, x=100, y=60, spacing=150):
-        """Load parent commit hashes for a given commit hash.
+    def load_commit_related(self, commit_hash, x=100, y=60, spacing=150):
+        """Load parent commit and tree hashes for a given commit hash.
         Positions are laid out horizontally starting at (x, y).
         Returns True on success, False on failure.
         """
@@ -244,6 +202,7 @@ class GraphModel:
             return False
 
         parents = []
+        tree = None
         #print(out)
         for line in out.splitlines():
             line = line.strip()
@@ -251,126 +210,32 @@ class GraphModel:
                 parts = line.split()
                 if len(parts) == 2:
                     parents.append(parts[1])
+            elif line.startswith('tree '):
+                tree = line.split()[1]
             elif line == '':
                 break  # end of headers
-            
+   
         # add parent commits as vertices
+        xp = x
         for p in parents:
             short_hash = p[:8]
             parent_label = f'{short_hash}'
             if parent_label not in self.vertices:
-                self.add_vertex(x, y + 80, parent_label, vtype='commit')
+                self.add_vertex(xp, y + 40, parent_label, vtype='commit')
             # connect commit to parent
             try:
-                self.add_edge(parent_label, f'{commit_hash[:8]}', edge_type=True, label='parent')
+                self.add_edge(parent_label, f'{commit_hash[:8]}', edge_type=True)
             except Exception:
                 pass
-            x += spacing
-        return True
-
-    def load_commits_for_branch(self, repo_dir, branch, per_branch=20, y_start=140, y_spacing=80):
-        """Lazy-load commits for a single branch on-demand.
-
-        If branch commits are already loaded, returns True without re-loading.
-        Returns True on success, False on failure.
-        
-        Uses _branch_tips[branch] (commit hash) if available for faster rev-list.
-        """
-        print(f"Loading commits for branch '{branch}'...")
-        if not repo_dir or not os.path.isdir(repo_dir):
-            return False
-        # check if branch position is known
-        if branch not in self.vertices:
-            return False
-
-        bx = self.vertices[branch]['x']
-        # use stored tip hash if available (faster than resolving branch name)
-        start_ref = self._branch_tips.get(branch, branch)
-        
-        # get commits for this branch
-        try:
-            proc = subprocess.run(['git', '-C', repo_dir, 'rev-list', '--max-count', str(per_branch), start_ref],
-                                  capture_output=True, text=True, check=True)
-            out = proc.stdout
-        except Exception:
-            return False
-
-        chashes = [line.strip() for line in out.splitlines() if line.strip()]
-        #print(chashes)
-        # batch-fetch parent info using git cat-file --batch
-        parents_map = {}
-        if chashes:
+            xp += spacing
+        # add tree as vertex diagonally below commit
+        if tree:
+            tree_label = f'{tree[:8]}'
+            if tree_label not in self.vertices:
+                self.add_vertex(x + 20, y + 20, tree_label, vtype='container')
+            # connect commit to tree
             try:
-                input_str = '\n'.join(chashes) + '\n'
-                proc = subprocess.run(['git', '-C', repo_dir, 'cat-file', '--batch'],
-                                      input=input_str, capture_output=True, text=True, check=False)
-                out = proc.stdout
-                lines = out.splitlines()
-                i = 0
-                for h in chashes:
-                    if i < len(lines):
-                        header = lines[i].strip().split()
-                        if len(header) >= 2 and header[1] == 'commit':
-                            size = int(header[2]) if len(header) > 2 else 0
-                            i += 1
-                            parents = []
-                            while i < len(lines) and lines[i].strip():
-                                line = lines[i].strip()
-                                if line.startswith('parent '):
-                                    parents.append(line.split()[1])
-                                i += 1
-                            parents_map[h] = parents
-                            if i < len(lines) and not lines[i].strip():
-                                i += 1
-                        else:
-                            i += 1
+                self.add_edge(f'{commit_hash[:8]}', tree_label, label='root', edge_type=False)
             except Exception:
-                # fallback to git log
-                try:
-                    proc = subprocess.run(['git', '-C', repo_dir, 'log', '--no-walk', '--format=%H%n%P', '--'] + chashes,
-                                          capture_output=True, text=True, check=False)
-                    out = proc.stdout
-                    lines = out.splitlines()
-                    for j in range(0, len(lines), 2):
-                        if j + 1 < len(lines):
-                            hh = lines[j].strip()
-                            pp = lines[j+1].strip().split() if lines[j+1].strip() else []
-                            parents_map[hh] = pp
-                except Exception:
-                    pass
-
-        y = y_start
-        prev_label = None
-        for h in chashes:
-            # cache parent info
-            if h not in self._commits_metadata and h in parents_map:
-                self._commits_metadata[h] = {'parents': parents_map[h]}
-
-            label = f'{h[:8]}'
-            if label not in self.vertices:
-                added = self.add_vertex(bx, y, label, vtype='commit')
-            else:
-                added = label
-
-            # connect branch to first commit
-            if prev_label is None:
-                try:
-                    self.add_edge(branch, label, edge_type=True, label=None)
-                except Exception:
-                    pass
-
-            # connect commit to parent
-            parents = self._commits_metadata.get(h, {}).get('parents', [])
-            if parents:
-                parent = parents[0]
-                parent_label = f'{parent[:8]}'
-                if parent_label not in self.vertices:
-                    self.add_vertex(bx + 40, y + y_spacing/2, parent_label, vtype='commit')
-                try:
-                    self.add_edge(parent_label, label, edge_type=True, label='parent')
-                except Exception:
-                    pass
-            prev_label = label
-            y += y_spacing
-
+                pass
         return True

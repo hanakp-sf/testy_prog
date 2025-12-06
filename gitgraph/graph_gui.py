@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import simpledialog
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 import tkinter.font as tkfont
 import math
 import sys
@@ -12,15 +12,10 @@ from graph_model import GraphModel
 class GraphGUI(tk.Tk):
     def __init__(self, model=None):
         super().__init__()
-        self.title("Interactive Directed Graph Creator")
-        self.geometry("1280x800")
-
-        self.canvas = tk.Canvas(self, bg="white")
-        self.canvas.pack(fill=tk.BOTH, expand=True)
 
         # colors per vertex type
         self.vertex_colors = {
-            'branch': 'lightgreen',
+            'branch': '#ffff00',
             'commit': 'pink',
             'container': 'lightgray',
             'file': 'khaki'
@@ -37,57 +32,90 @@ class GraphGUI(tk.Tk):
         # Edge line: SRC_VID, DEST_VID, EDGE
         # Edge label: SRC_VID, DEST_VID, EDGELABEL
 
+        ##Configuation
+        # whether to show container/tree vertices and edges
+        self._show_trees = False  
+
         # model injection: use provided model or create a new empty model
-        if model is None:
-            self.model = GraphModel()
-            self._repo_dir = None
-        else:
-            self.model = model
-            self._repo_dir = model.repo_dir 
+        self.model = model if model else GraphModel()
+        self._repo_dir = self.model.repo_dir  
 
         # GUI mappings            
         self._drag_data = {'vertex': None, 'x': 0, 'y': 0}
 
-        # Bindings
-        self.canvas.bind('<Button-1>', self.on_left_button_down)
-        self.canvas.bind('<B1-Motion>', self.on_left_button_drag)
-        self.canvas.bind('<ButtonRelease-1>', self.on_left_button_up)
+        self.title("Git graph for " + self._repo_dir if self._repo_dir else "<untitled>")
+        self.geometry("900x600")
+        self.minsize(500, 500)
 
-        self.canvas.bind('<Button-3>', self.on_right_button_down)
+        # ---- Container for scrollable region ----
+        scrollableFrame = ttk.Frame(self)
+        scrollableFrame.pack(fill="both", expand=True)
+
+        # Use grid to make scrollbars align properly
+        scrollableFrame.rowconfigure(0, weight=1)
+        scrollableFrame.columnconfigure(0, weight=1)
+
+        self.canvas = tk.Canvas(scrollableFrame, bg="white")
+        #self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
         
+        # Scrollbars
+        v_scroll = ttk.Scrollbar(scrollableFrame, orient="vertical", command=self.canvas.yview)
+        h_scroll = ttk.Scrollbar(scrollableFrame, orient="horizontal", command=self.canvas.xview)
+        self.canvas.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
+
+        v_scroll.grid(row=0, column=1, sticky="ns")
+        h_scroll.grid(row=1, column=0, columnspan=2, sticky="ew")
+
+        # Update scrollregion
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+        # Bindings
+        self._build_bindings()
+
         # Support for context menu actions
         self._context_click = None
         # build menubar and context menu
         self.menubar, self.context_menu = self._build_menus()
-
         self.config(menu=self.menubar)
-        self.bind('<Delete>', self.on_delete_key)
 
         # Instructions label
         instr = (
             "Left-click+drag vertex: move vertex.\n"
-            "Right-click+drag from one vertex to another: create directed edge.\n"
-            "Select a vertex and press Delete: remove vertex and connected edges."
+            "Right-click vertex: context menu."
         )
         self.status = tk.Label(self, text=instr, anchor='w', justify='left')
-        self.status.pack(fill=tk.X)
+        self.status.pack(side="bottom", fill=tk.X)
 
         # render any existing model state into the GUI
         self._render_model()
 
     def _build_menus(self):
         context_menu = tk.Menu(self, tearoff=0)
-        context_menu.add_command(label='Show parent', command=self._context_show_parent_commit)
-        context_menu.add_command(label='Show tree', command=self._context_show_commit_tree)
+        context_menu.add_command(label='Show related', command=self._context_load_commit_connected)
+        context_menu.add_command(label='Show tree', command=self._context_show_commit_tree, state=tk.DISABLED)
         # Menu bar with Vertex submenu
         menubar = tk.Menu(self)
         vertex_menu = tk.Menu(menubar, tearoff=0)
         vertex_menu.add_command(label='Add vertex...', command=self._menu_add_vertex)
         menubar.add_cascade(label='Vertex', menu=vertex_menu)
+        view_menu = tk.Menu(menubar, tearoff=0)
+        view_menu.add_checkbutton(label='Show containers', 
+                                  onvalue=True, offvalue=False,
+                                  variable=tk.BooleanVar(value=self._show_trees),
+                                  command=self._toggle_show_trees)
+        menubar.add_cascade(label='View', menu=view_menu)
         model_menu = tk.Menu(menubar, tearoff=0)
         model_menu.add_command(label='Print model', command=self._menu_print_model)
         menubar.add_cascade(label='Model', menu=model_menu)
         return menubar, context_menu
+
+    def _build_bindings(self):
+        # self.bind('<Delete>', self.on_delete_key) disabled delete
+        self.canvas.bind('<Button-1>', self.on_left_button_down)
+        self.canvas.bind('<B1-Motion>', self.on_left_button_drag)
+        self.canvas.bind('<ButtonRelease-1>', self.on_left_button_up)
+        self.canvas.bind('<Button-3>', self.on_right_button_down)
 
     # ------------------ Vertex helpers ------------------
     def _measure_label(self, label):
@@ -99,7 +127,7 @@ class GraphGUI(tk.Tk):
         w = font.measure(label)
         # approximate height in pixels (linespace = ascent+descent)
         try:
-            h = font.metrics('linespace')
+            h = font.metrics('linespace') 
         except Exception:
             # fallback estimate
             h = font.metrics('ascent') + font.metrics('descent') if hasattr(font, 'metrics') else int(w * 0.2)
@@ -132,11 +160,25 @@ class GraphGUI(tk.Tk):
             return d
         return ((d[2]-d[0])/2) - 1, ((d[3]-d[1])/2) - 1  
     
+
+    def _create_round_rectangle(self, x1, y1, x2, y2, **kwargs):
+        # niektore body sa opakuju na vykreslenie priamych ciar namiesto spline kriviek
+        # suvisi to s parametrom smooth=True
+        r = 18
+        points = (x1+r, y1, x2-r, y1, x2-r, y1, 
+                  x2, y1, x2, y1+r, x2, y1+r, x2, y2-r, 
+                  x2, y2-r, x2, y2, x2-r, y2, x2-r, y2, 
+                  x1+r, y2, x1+r, y2, x1, y2, x1, y2-r, 
+                  x1, y2-r, x1, y1+r, x1, y1+r, x1, y1)
+        
+        #print (points)
+        return self.canvas.create_polygon(points, **kwargs, smooth=True)  
+
     def create_vertex(self, x, y, label=None, vtype=None):
         lbl = label or f"v{self.model._next_vid}"
         text_width, text_height = self._measure_label(lbl)
         paddingx = 14
-        paddingy = 8
+        paddingy = 16
         r=24 # minimal half-width
         rx = max(r, int(text_width / 2) + paddingx)
         ry = text_height // 2 + paddingy/2
@@ -152,22 +194,16 @@ class GraphGUI(tk.Tk):
                 pass
             return None
         # draw a rectangle vertex (rx, ry are half-width/half-height)
-        # special-case 'branch' vertices: transparent fill and no outline
-        if used_type == 'branch':
-            fill_color = ''
-            outline_color = ''
-            outline_width = 0
-        else:
-            fill_color = self.vertex_colors.get(used_type, 'lightblue')
-            outline_color = 'black'
-            outline_width = 2
-        rect = self.canvas.create_rectangle(x - rx, y - ry, x + rx, y + ry,
-                            fill=fill_color, outline=outline_color, width=outline_width, tags = [lbl,  self.VERTEX])
-        text = self.canvas.create_text(x, y, text=lbl, tags= [lbl , self.VERTEXLABEL])
-
+        # special-case 'branch' vertices: transparent fill and no outline       
+        rect = self._create_round_rectangle(x - rx, y - ry, x + rx, y + ry,
+                            fill=self.vertex_colors.get(used_type, 'lightblue'), 
+                            outline='' if used_type == 'branch' else 'black', 
+                            width=0 if used_type == 'branch' else 2, 
+                            tags = [lbl,  self.VERTEX])
+        text = self.canvas.create_text(x, y, text=lbl, justify = tk.CENTER, tags= [lbl , self.VERTEXLABEL])
         return vid
 
-    def delete_vertex(self, vid):
+    def delete_vertex(self, vid, remove_from_model=True):
         # remove canvas items
         try:
             self.canvas.delete(self._get_vertex_rect(vid))
@@ -178,8 +214,6 @@ class GraphGUI(tk.Tk):
         except Exception:
             pass
 
-        # remove edges connected to this vertex (GUI lines)
-        new_edges = []
         # find edges via canvas tags and delete them
         for line_id in self.canvas.find_withtag(self.EDGE + " && " + vid):
             s,  d,  _ = self.canvas.gettags(line_id)
@@ -189,7 +223,8 @@ class GraphGUI(tk.Tk):
             if label_id:
                 self.canvas.delete(label_id)
         # update model
-        self.model.delete_vertex(vid)
+        if remove_from_model:
+            self.model.delete_vertex(vid)
 
     def find_vertex_at(self, x, y):
         items = self.canvas.find_overlapping(x, y, x, y)
@@ -250,8 +285,6 @@ class GraphGUI(tk.Tk):
         ex, ey = intersect_rect(x2, y2, rx2, ry2, -dx, -dy)
         return sx, sy, ex, ey
 
-    # NOTE: rounded-rectangle helpers removed; use ellipse endpoint math below.
-
     def _calculate_label_position(self, x1, y1, x2, y2, offset=15):
         """Calculate label position perpendicular to edge line.
         
@@ -303,7 +336,7 @@ class GraphGUI(tk.Tk):
 
     # ------------------ Event handlers ------------------
     def on_left_button_down(self, event):
-        x, y = event.x, event.y
+        x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
         vid = self.find_vertex_at(x, y)
         if vid is None:
             # do not create a new vertex on left-click empty area
@@ -324,10 +357,11 @@ class GraphGUI(tk.Tk):
 
     def on_left_button_drag(self, event):
         vid = self._drag_data.get('vertex')
+        x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
         if not vid:
             return
-        dx = event.x - self._drag_data['x']
-        dy = event.y - self._drag_data['y']
+        dx = x - self._drag_data['x']
+        dy = y - self._drag_data['y']
 
         # move shapes (rect + text)
         try:
@@ -342,22 +376,25 @@ class GraphGUI(tk.Tk):
         m = self.model.vertices[vid]
         m['x'] += dx
         m['y'] += dy
-        self._drag_data['x'] = event.x
-        self._drag_data['y'] = event.y
+        self._drag_data['x'] = x
+        self._drag_data['y'] = y
         self.update_edges_for_vertex(vid)
 
     def on_left_button_up(self, event):
         vid = self._drag_data.get('vertex')
         if vid:
             # unhighlight
-            try:
-                self.canvas.itemconfig(self._get_vertex_rect(vid), outline='black')
+            try:                    
+                self.canvas.itemconfig(self._get_vertex_rect(vid), 
+                                       outline='' if self.model.vertices[vid].get('type') == 'branch' else 'black')
             except Exception:
                 pass
         self._drag_data['vertex'] = None
+        # Update scroll region if drawing expands bounds
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
     def on_right_button_down(self, event):
-        x, y = event.x, event.y
+        x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
         vid = self.find_vertex_at(x, y)
         if vid and (self.model.vertices[vid].get('type') != 'branch'):
             # show context menu for adding parent commit
@@ -388,12 +425,12 @@ class GraphGUI(tk.Tk):
         self.create_vertex(x, y, label=lbl)
         self._context_click = None
 
-    def _context_show_parent_commit(self):        
+    def _context_load_commit_connected(self):        
         if not self._context_click:
             return
         x, y = self._context_click
         vid = self.find_vertex_at(x, y)
-        ok = self.model.load_parents_for_commit(vid, self.model.vertices[vid].get('x'), self.model.vertices[vid].get('y') + 80)
+        ok = self.model.load_commit_related(vid, self.model.vertices[vid].get('x'), self.model.vertices[vid].get('y') + 40)
         if ok:
             self._render_model()
         self._context_click = None
@@ -404,11 +441,10 @@ class GraphGUI(tk.Tk):
         x, y = self._context_click
         vid = self.find_vertex_at(x, y)
         print(f"Show commit tree for {vid} not implemented")
-        ok = False #self.model.load_parents_for_commit(vid, self.model.vertices[vid].get('x'), self.model.vertices[vid].get('y') + 80)
+        ok = False #self.model.load_parents_for_commit(vid, self.model.vertices[vid].get('x'), self.model.vertices[vid].get('y') + 60)
         if ok:
             self._render_model()
         self._context_click = None
-
 
     def _menu_add_vertex(self):
         """Add a vertex using current pointer location (or canvas center).
@@ -442,7 +478,12 @@ class GraphGUI(tk.Tk):
         except Exception:
             lbl = None
         self.create_vertex(x, y, label=lbl)
-    
+
+    def _toggle_show_trees(self):
+        """Toggle visibility of container/tree vertices and edges."""
+        self._show_trees = not self._show_trees
+        self._render_model()
+            
     def _menu_print_model(self):
         """Print the current model to the console for debugging."""
         try:
@@ -454,7 +495,6 @@ class GraphGUI(tk.Tk):
                 print(f"  {e}")
         except Exception as e:
             print(f"Error printing model: {e}")
-
 
     def on_delete_key(self, event):
         # delete currently highlighted vertex (red outline)
@@ -488,78 +528,38 @@ class GraphGUI(tk.Tk):
             pass
 
     # ------------------ Model rendering ------------------
-    def _render_model2(self):
+    def _render_model(self):
+        # check if vertex exists in GUI, if not, create it
         for vid in self.model.vertices:
-            rect = self._get_vertex_rect(vid)
-
-            # check if vertex exists in GUI, if not, create it
+            rect = self._get_vertex_rect(vid)           
             if rect is None:
-                print(f"Not found vertex {vid}, creating new one")
+                # skip container vertices if configured so
+                if not self._show_trees and self.model.vertices[vid].get('type') == 'container':
+                    continue
                 v = self.model.vertices[vid]
                 self.create_vertex(v['x'], v['y'], label=vid, vtype=v.get('type', 'commit'))
-        # recreate all edges
+        # create edges if not present in GUI
         for edge in self.model.edges:
-            src_vid = edge['src']
-            dst_vid = edge['dst']
+            s_v = edge['src']
+            d_v = edge['dst']
             edge_type = edge.get('oriented', True)
             edge_label = edge.get('label', None)
             # check if edge already exists in GUI
-            exists = False
-            #TODO
-            '''
-            for e in self.edges:
-                if e[0] == src_vid and e[1] == dst_vid:
-                    exists = True
-                    break
-            if not exists:
-                self._create_edge_line(src_vid, dst_vid, edge_type, edge_label)
-            '''
-
-    def _render_model(self):
-        """Render all vertices and edges from the model into the canvas."""
-        # clear any existing GUI items
-        for vid in self.model.vertices:
-            try:
-                try:
-                    self.canvas.delete(self._get_vertex_rect(vid))
-                except Exception:
-                    pass
-                try:
-                    self.canvas.delete(self._get_vertex_text(vid))
-                except Exception:
-                    pass
-            except Exception:
-                pass
-
-        for eid in list(self.canvas.find_withtag(self.EDGE)):
-            try:
-                self.canvas.delete(eid)
-            except Exception:
-                pass
-            
-        for elid in list(self.canvas.find_withtag(self.EDGELABEL)):
-            try:
-                self.canvas.delete(elid)
-            except Exception:
-                pass
-
-        # create GUI items for vertices using create_vertex
-        # collect vertex data first to avoid modifying dict during iteration
-        vertex_data = [(vid, v['x'], v['y'], v.get('type', 'commit')) 
-                   for vid, v in self.model.vertices.items()]
-        # clear model vertices and re-add via create_vertex
-        self.model.vertices.clear()
-        self.model._next_vid = 1
-        for vid, x, y, vtype in vertex_data:
-            self.create_vertex(x, y, label=vid, vtype=vtype)
-
-        # create GUI items for edges (do not add to model — it's already present)
-        for edge in self.model.edges:
-            src_vid = edge['src']
-            dst_vid = edge['dst']
-            edge_type = edge.get('oriented', True)
-            edge_label = edge.get('label', None)
-            self._create_edge_line(src_vid, dst_vid, edge_type, edge_label)
+            line_id = self._get_edge_line(s_v, d_v)
+            if line_id is None:
+                # skip edges connected to container vertices if configured so
+                if not self._show_trees and (self.model.vertices[s_v].get('type') == 'container' or
+                                             self.model.vertices[d_v].get('type') == 'container'):
+                    continue
+                self._create_edge_line(s_v, d_v, edge_type, edge_label)
+        # delete container vertices and edges if configured so, but do not modify model
+        if not self._show_trees:
+            for vid in self.model.vertices:
+                v = self.model.vertices[vid]
+                if v.get('type') == 'container':
+                    self.delete_vertex(vid, False)
+        # Update scroll region if drawing expands bounds
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
     def _create_edge_line(self, src_vid, dst_vid, edge_type=True, label=None):
         s = self.model.vertices[src_vid]

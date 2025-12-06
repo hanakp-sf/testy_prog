@@ -2,34 +2,15 @@
 to do:
 - DONE pri spusteni nahrat vsetky branches + 1 commit ku kazdej + rodica ku kazdemu commit
 - DONE odstranit edges v GUI, nahradit pouzitim tags
-- urobit gui.render_model tak, ze prebehne gui model and graph model tak ze ak existuje vrchol alebo hrana v graph modeli,
- tak ju prida do gui modelu
+- DONE urobit gui.render_model tak, ze prebehne gui model and graph model tak ze ak existuje vrchol alebo hrana v graph modeli, tak ju prida do gui modelu
 - DONE upravit graph model tak, ze label nie je property vrcholu, staci ak je id vrcholu
 - DONE upravit graph model tak, ze rx, ry nie je property vrcholu, ak to treba, nech to je sucastou gui modelu
 - DONE remove _branch_position, da sa nahradit hladanim v zozname vrcholov
 - DONE odstranit right-click-drag, je to na presuvanie hran medzi vrcholmi
 - DONE pouzit tagging pre canvas and find_withtag("current") pre najdenie focused canvas
 - DONE remove vertex_by_canvas from GUI
-- scrolovatelne okno
-
-priklad na round rectangle:
-
-        oval = self.round_rectangle(x - rx, y - ry, x + rx, y + ry, r=10,
-                                    fill='lightblue', outline='black', width=2)
-
-
-
-    def round_rectangle(self, x1, y1, x2, y2, r=25, **kwargs):
-        # niektore body sa opakuju na vykreslenie priamych ciar namiesto spline kriviek
-        # suvisi to s parametrom smooth=True
-        points = (x1+r, y1, x2-r, y1, x2-r, y1, 
-                  x2, y1, x2, y1+r, x2, y1+r, x2, y2-r, 
-                  x2, y2-r, x2, y2, x2-r, y2, x2-r, y2, 
-                  x1+r, y2, x1+r, y2, x1, y2, x1, y2-r, 
-                  x1, y2-r, x1, y1+r, x1, y1+r, x1, y1)
-        
-        print (points)
-        #self.canvas.create_oval(x1+r -1, y1 -1, x1 + r +1, y1 +1, fill='red', outline='red')
-        #self.canvas.create_oval(x2 -r -1, y1 -1, x2 -r +1, y1 +1, fill='green', outline='green')
-        #self.canvas.create_oval(x2 -1, y1 -1, x2 +1, y1 +1, fill='black', outline='black')
-        return self.canvas.create_polygon(points, **kwargs, smooth=True)  
+- DONE scrolovatelne okno
+- zobrazenie tree pre commit
+    - DONE ked sa nahra commit do modelu, automaticky sa nahra tree object + linka nan 
+    - DONE podla nastavenia view flagu sa tree objects aj zobrazia v render_model
+    - tree object maju context menu show tree ktory nahra cely strom objektov  
