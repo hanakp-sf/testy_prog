@@ -17,24 +17,24 @@ class GraphGUI(tk.Tk):
         self.vertex_colors = {
             'branch': '#ffff00',
             'commit': 'pink',
-            'container': 'lightgray',
-            'file': 'khaki'
+            'tree': 'lightgray',
+            'blob': 'khaki'
         }
-        # canvas types
+        # GUI types
         self.VERTEX = 'rect'
         self.VERTEXLABEL = 'vtext'
         self.EDGE = 'edge'
         self.EDGELABEL = 'etext'
 
         # Widget tags
-        # Vertex rectangle: VID, VERTEX
-        # Vertex label: VID, VERTEXLABEL
-        # Edge line: SRC_VID, DEST_VID, EDGE
-        # Edge label: SRC_VID, DEST_VID, EDGELABEL
+        # Vertex rectangle: VID (from model), TYPE (from model), VERTEX ( constant)
+        # Vertex label: VID (from model), VERTEXLABEL (constant)
+        # Edge line: SRC_VID (from model), DEST_VID (from model), EDGE (constant)
+        # Edge label: SRC_VID (from model), DEST_VID (from model), EDGELABEL (constant)
 
         ##Configuation
-        # whether to show container/tree vertices and edges
-        self._show_trees = False  
+        # whether to show tree/blob vertices and edges
+        self._show_trees = tk.BooleanVar(value=True) 
 
         # model injection: use provided model or create a new empty model
         self.model = model if model else GraphModel()
@@ -76,7 +76,7 @@ class GraphGUI(tk.Tk):
         # Support for context menu actions
         self._context_click = None
         # build menubar and context menu
-        self.menubar, self.context_menu = self._build_menus()
+        self.menubar, self.commit_ctx_menu, self.tree_ctx_menu = self._build_menus()
         self.config(menu=self.menubar)
 
         # Instructions label
@@ -91,9 +91,10 @@ class GraphGUI(tk.Tk):
         self._render_model()
 
     def _build_menus(self):
-        context_menu = tk.Menu(self, tearoff=0)
-        context_menu.add_command(label='Show related', command=self._context_load_commit_connected)
-        context_menu.add_command(label='Show tree', command=self._context_show_commit_tree, state=tk.DISABLED)
+        commit_ctx_menu = tk.Menu(self, tearoff=0)
+        commit_ctx_menu.add_command(label='Show related', command=self._context_load_commit_connected)
+        tree_ctx_menu = tk.Menu(self, tearoff=0)
+        tree_ctx_menu.add_command(label='Show tree', command=self._context_show_commit_tree)
         # Menu bar with Vertex submenu
         menubar = tk.Menu(self)
         vertex_menu = tk.Menu(menubar, tearoff=0)
@@ -102,13 +103,13 @@ class GraphGUI(tk.Tk):
         view_menu = tk.Menu(menubar, tearoff=0)
         view_menu.add_checkbutton(label='Show containers', 
                                   onvalue=True, offvalue=False,
-                                  variable=tk.BooleanVar(value=self._show_trees),
+                                  variable=self._show_trees,
                                   command=self._toggle_show_trees)
         menubar.add_cascade(label='View', menu=view_menu)
         model_menu = tk.Menu(menubar, tearoff=0)
         model_menu.add_command(label='Print model', command=self._menu_print_model)
         menubar.add_cascade(label='Model', menu=model_menu)
-        return menubar, context_menu
+        return menubar, commit_ctx_menu, tree_ctx_menu
 
     def _build_bindings(self):
         # self.bind('<Delete>', self.on_delete_key) disabled delete
@@ -133,34 +134,33 @@ class GraphGUI(tk.Tk):
             h = font.metrics('ascent') + font.metrics('descent') if hasattr(font, 'metrics') else int(w * 0.2)
         return w, h
 
-    # --- vid -> canvas_id of rectangle
-    def _get_vertex_rect(self, vid):
-        ids = self.canvas.find_withtag( vid + ' && ' + self.VERTEX )
+    # --- label -> canvas_id of rectangle
+    def _get_vertex_rect(self, label):
+        ids = self.canvas.find_withtag( label + ' && ' + self.VERTEX )
         return ids[0] if ids != () else None
     
-    # --- vid -> canvas_id of vertex label
-    def _get_vertex_text(self, vid):
-        ids = self.canvas.find_withtag( vid + ' && ' + self.VERTEXLABEL )
+    # --- label -> canvas_id of vertex label
+    def _get_vertex_text(self, label):
+        ids = self.canvas.find_withtag( label + ' && ' + self.VERTEXLABEL )
         return ids[0] if ids != () else None 
     
-    # --- vid -> canvas_id of edge
-    def _get_edge_line(self, srcvid, dstvid):
-        ids = self.canvas.find_withtag( srcvid + ' && ' + dstvid + ' && ' + self.EDGE )
+    # --- (srclabel, dstlabel) -> canvas_id of edge
+    def _get_edge_line(self, srclabel, dstlabel):
+        ids = self.canvas.find_withtag( srclabel + ' && ' + dstlabel + ' && ' + self.EDGE )
         return ids[0] if ids != () else None    
 
-    # --- vid -> canvas_id of edge label
-    def _get_edge_text(self, srcvid, dstvid):
-        ids = self.canvas.find_withtag( srcvid + ' && ' + dstvid + ' && ' + self.EDGELABEL )
+    # --- (srclabel, dstlabel) -> canvas_id of edge label
+    def _get_edge_text(self, srclabel, dstlabel):
+        ids = self.canvas.find_withtag( srclabel + ' && ' + dstlabel + ' && ' + self.EDGELABEL )
         return ids[0] if ids != () else None 
     
-    # --- vid -> dimensions of vertex rectangle (rx, ry)
-    def _get_vertex_dimensions(self, vid):
-        d = self.canvas.bbox(self._get_vertex_rect(vid))
+    # --- label -> dimensions of vertex rectangle (rx, ry)
+    def _get_vertex_dimensions(self, label):
+        d = self.canvas.bbox(self._get_vertex_rect(label))
         if d == ():
             return d
         return ((d[2]-d[0])/2) - 1, ((d[3]-d[1])/2) - 1  
     
-
     def _create_round_rectangle(self, x1, y1, x2, y2, **kwargs):
         # niektore body sa opakuju na vykreslenie priamych ciar namiesto spline kriviek
         # suvisi to s parametrom smooth=True
@@ -185,8 +185,8 @@ class GraphGUI(tk.Tk):
 
         # pass vertex type to model; default in model is 'commit'
         used_type = vtype if vtype is not None else 'commit'
-        vid = self.model.add_vertex(x, y, lbl, vtype=used_type)
-        if not vid:
+        labelid = self.model.add_vertex(x, y, lbl, vtype=used_type)
+        if not labelid:
             # failed to add (empty or duplicate label)
             try:
                 messagebox.showerror("Vertex label", f"Cannot create vertex. Label '{lbl}' is empty or already exists.", parent=self)
@@ -199,23 +199,23 @@ class GraphGUI(tk.Tk):
                             fill=self.vertex_colors.get(used_type, 'lightblue'), 
                             outline='' if used_type == 'branch' else 'black', 
                             width=0 if used_type == 'branch' else 2, 
-                            tags = [lbl,  self.VERTEX])
-        text = self.canvas.create_text(x, y, text=lbl, justify = tk.CENTER, tags= [lbl , self.VERTEXLABEL])
-        return vid
+                            tags = [lbl, used_type , self.VERTEX])
+        text = self.canvas.create_text(x, y, text=lbl, justify = tk.CENTER, tags= [lbl , used_type, self.VERTEXLABEL])
+        return labelid
 
-    def delete_vertex(self, vid, remove_from_model=True):
+    def delete_vertex(self, label, remove_from_model=True):
         # remove canvas items
         try:
-            self.canvas.delete(self._get_vertex_rect(vid))
+            self.canvas.delete(self._get_vertex_rect(label))
         except Exception:
             pass
         try:
-            self.canvas.delete(self._get_vertex_text(vid))
+            self.canvas.delete(self._get_vertex_text(label))
         except Exception:
             pass
 
         # find edges via canvas tags and delete them
-        for line_id in self.canvas.find_withtag(self.EDGE + " && " + vid):
+        for line_id in self.canvas.find_withtag(self.EDGE + " && " + label):
             s,  d,  _ = self.canvas.gettags(line_id)
             self.canvas.delete(line_id)
             # also delete label if exists
@@ -224,7 +224,7 @@ class GraphGUI(tk.Tk):
                 self.canvas.delete(label_id)
         # update model
         if remove_from_model:
-            self.model.delete_vertex(vid)
+            self.model.delete_vertex(label)
 
     def find_vertex_at(self, x, y):
         items = self.canvas.find_overlapping(x, y, x, y)
@@ -232,14 +232,14 @@ class GraphGUI(tk.Tk):
             tags = self.canvas.gettags(item)
             # look for VERTEX tag to identify vertex rectangle
             if self.VERTEX in tags:
-                return tags[0]  # first tag is the vertex label = vid
+                return tags[0]  # first tag is the vertex label
         return None
 
     # ------------------ Edge helpers ------------------
-    def create_edge(self, src_vid, dst_vid, edge_type=True, label=None):
-        if not self.model.add_edge(src_vid, dst_vid, edge_type=edge_type, label=label):
+    def create_edge(self, srclabel, dstlabel, edge_type=True, label=None):
+        if not self.model.add_edge(srclabel, dstlabel, edge_type=edge_type, label=label):
             return
-        self._create_edge_line(src_vid, dst_vid, edge_type, label)
+        self._create_edge_line(srclabel, dstlabel, edge_type, label)
 
 
     def _rect_line_endpoints(self, x1, y1, rx1, ry1, x2, y2, rx2, ry2):
@@ -316,10 +316,10 @@ class GraphGUI(tk.Tk):
         
         return label_x, label_y
 
-    def update_edges_for_vertex(self, vid):
+    def update_edges_for_vertex(self, label):
         """Update all edges connected to the given vertex ID."""
         # find edges via canvas tags and update them
-        for line_id in self.canvas.find_withtag(self.EDGE + " && " + vid):
+        for line_id in self.canvas.find_withtag(self.EDGE + " && " + label):
             s,  d,  _ = self.canvas.gettags(line_id)
             s_v = self.model.vertices[s]
             d_v = self.model.vertices[d]
@@ -337,56 +337,53 @@ class GraphGUI(tk.Tk):
     # ------------------ Event handlers ------------------
     def on_left_button_down(self, event):
         x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-        vid = self.find_vertex_at(x, y)
-        if vid is None:
+        labelid = self.find_vertex_at(x, y)
+        if labelid is None:
             # do not create a new vertex on left-click empty area
             return
         else:
-            # trigger lazy loading on first interaction if a branch is clicked
-            ##if self._repo_dir:
-            ##    self._trigger_lazy_load(vid)
             # start dragging vertex
-            self._drag_data['vertex'] = vid
+            self._drag_data['vertex'] = labelid
             self._drag_data['x'] = x
             self._drag_data['y'] = y
             # highlight
             try:
-                self.canvas.itemconfig(self._get_vertex_rect(vid), outline='red')
+                self.canvas.itemconfig(self._get_vertex_rect(labelid), outline='red')
             except Exception:
                 pass
 
     def on_left_button_drag(self, event):
-        vid = self._drag_data.get('vertex')
+        vlabel = self._drag_data.get('vertex')
         x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-        if not vid:
+        if not vlabel:
             return
         dx = x - self._drag_data['x']
         dy = y - self._drag_data['y']
 
         # move shapes (rect + text)
         try:
-            self.canvas.move(self._get_vertex_rect(vid), dx, dy)
+            self.canvas.move(self._get_vertex_rect(vlabel), dx, dy)
         except Exception:
             pass
         try:
-            self.canvas.move(self._get_vertex_text(vid), dx, dy)
+            self.canvas.move(self._get_vertex_text(vlabel), dx, dy)
         except Exception:
             pass
         # update model position
-        m = self.model.vertices[vid]
+        m = self.model.vertices[vlabel]
         m['x'] += dx
         m['y'] += dy
         self._drag_data['x'] = x
         self._drag_data['y'] = y
-        self.update_edges_for_vertex(vid)
+        self.update_edges_for_vertex(vlabel)
 
     def on_left_button_up(self, event):
-        vid = self._drag_data.get('vertex')
-        if vid:
+        vlabel = self._drag_data.get('vertex')
+        if vlabel:
             # unhighlight
             try:                    
-                self.canvas.itemconfig(self._get_vertex_rect(vid), 
-                                       outline='' if self.model.vertices[vid].get('type') == 'branch' else 'black')
+                self.canvas.itemconfig(self._get_vertex_rect(vlabel), 
+                                       outline='' if self.model.vertices[vlabel].get('type') == 'branch' else 'black')
             except Exception:
                 pass
         self._drag_data['vertex'] = None
@@ -395,17 +392,27 @@ class GraphGUI(tk.Tk):
 
     def on_right_button_down(self, event):
         x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-        vid = self.find_vertex_at(x, y)
-        if vid and (self.model.vertices[vid].get('type') != 'branch'):
-            # show context menu for adding parent commit
+        vlabel = self.find_vertex_at(x, y)
+        if vlabel and (self.model.vertices[vlabel].get('type') != 'branch'):
+            # show context menu for commit
             self._context_click = (x, y)
-            try:
-                self.context_menu.tk_popup(event.x_root, event.y_root)
-            finally:
+            if self.model.vertices[vlabel].get('type') == 'commit':
                 try:
-                    self.context_menu.grab_release()
-                except Exception:
-                    pass
+                    self.commit_ctx_menu.tk_popup(event.x_root, event.y_root)
+                finally:
+                    try:
+                        self.commit_ctx_menu.grab_release()
+                    except Exception:
+                        pass
+            # show context menu for tree
+            if self.model.vertices[vlabel].get('type') == 'tree':
+                try:
+                    self.tree_ctx_menu.tk_popup(event.x_root, event.y_root)
+                finally:
+                    try:
+                        self.tree_ctx_menu.grab_release()
+                    except Exception:
+                        pass                    
             return
 
     def _context_add_vertex(self):
@@ -429,8 +436,8 @@ class GraphGUI(tk.Tk):
         if not self._context_click:
             return
         x, y = self._context_click
-        vid = self.find_vertex_at(x, y)
-        ok = self.model.load_commit_related(vid, self.model.vertices[vid].get('x'), self.model.vertices[vid].get('y') + 40)
+        vlabel = self.find_vertex_at(x, y)
+        ok = self.model.load_commit_related(vlabel, self.model.vertices[vlabel].get('x'), self.model.vertices[vlabel].get('y') + 40)
         if ok:
             self._render_model()
         self._context_click = None
@@ -439,9 +446,8 @@ class GraphGUI(tk.Tk):
         if not self._context_click:
             return
         x, y = self._context_click
-        vid = self.find_vertex_at(x, y)
-        print(f"Show commit tree for {vid} not implemented")
-        ok = False #self.model.load_parents_for_commit(vid, self.model.vertices[vid].get('x'), self.model.vertices[vid].get('y') + 60)
+        vlabel = self.find_vertex_at(x, y)
+        ok = self.model.load_tree_contents(vlabel, self.model.vertices[vlabel].get('x'), self.model.vertices[vlabel].get('y') + 60)
         if ok:
             self._render_model()
         self._context_click = None
@@ -480,7 +486,7 @@ class GraphGUI(tk.Tk):
         self.create_vertex(x, y, label=lbl)
 
     def _toggle_show_trees(self):
-        """Toggle visibility of container/tree vertices and edges."""
+        """Toggle visibility of tree vertices and edges."""
         self._show_trees = not self._show_trees
         self._render_model()
             
@@ -488,8 +494,8 @@ class GraphGUI(tk.Tk):
         """Print the current model to the console for debugging."""
         try:
             print("Vertices:")
-            for vid, v in self.model.vertices.items():
-                print(f"  {vid}: label='{v.get('label')}', type='{v.get('type')}', pos=({v.get('x')},{v.get('y')})")
+            for vlabel, v in self.model.vertices.items():
+                print(f"  {vlabel}: type='{v.get('type')}', pos=({v.get('x')},{v.get('y')})")
             print("Edges:")
             for e in self.model.edges:
                 print(f"  {e}")
@@ -499,13 +505,13 @@ class GraphGUI(tk.Tk):
     def on_delete_key(self, event):
         # delete currently highlighted vertex (red outline)
         to_delete = None
-        for vid in self.model.vertices:
+        for vlabel in self.model.vertices:
             try:
-                cfg = self.canvas.itemcget(self._get_vertex_rect(vid), 'outline')
+                cfg = self.canvas.itemcget(self._get_vertex_rect(vlabel), 'outline')
             except Exception:
                 cfg = None
             if cfg == 'red':
-                to_delete = vid
+                to_delete = vlabel
                 break
         if to_delete:
             self.delete_vertex(to_delete)
@@ -530,14 +536,14 @@ class GraphGUI(tk.Tk):
     # ------------------ Model rendering ------------------
     def _render_model(self):
         # check if vertex exists in GUI, if not, create it
-        for vid in self.model.vertices:
-            rect = self._get_vertex_rect(vid)           
+        for labelid in self.model.vertices:
+            rect = self._get_vertex_rect(labelid)           
             if rect is None:
-                # skip container vertices if configured so
-                if not self._show_trees and self.model.vertices[vid].get('type') == 'container':
+                # skip tree/blob vertices if configured so
+                if not self._show_trees and self.model.vertices[labelid].get('type') in ['tree', 'blob']:
                     continue
-                v = self.model.vertices[vid]
-                self.create_vertex(v['x'], v['y'], label=vid, vtype=v.get('type', 'commit'))
+                v = self.model.vertices[labelid]
+                self.create_vertex(v['x'], v['y'], label=labelid, vtype=v.get('type', 'commit'))
         # create edges if not present in GUI
         for edge in self.model.edges:
             s_v = edge['src']
@@ -547,31 +553,31 @@ class GraphGUI(tk.Tk):
             # check if edge already exists in GUI
             line_id = self._get_edge_line(s_v, d_v)
             if line_id is None:
-                # skip edges connected to container vertices if configured so
-                if not self._show_trees and (self.model.vertices[s_v].get('type') == 'container' or
-                                             self.model.vertices[d_v].get('type') == 'container'):
+                # skip edges connected to tree/blob vertices if configured so
+                if not self._show_trees and (self.model.vertices[s_v].get('type') in ['tree', 'blob'] or
+                                             self.model.vertices[d_v].get('type') in ['tree', 'blob']):
                     continue
                 self._create_edge_line(s_v, d_v, edge_type, edge_label)
-        # delete container vertices and edges if configured so, but do not modify model
+        # delete tree/blob vertices and edges if configured so, but do not modify model
         if not self._show_trees:
-            for vid in self.model.vertices:
-                v = self.model.vertices[vid]
-                if v.get('type') == 'container':
-                    self.delete_vertex(vid, False)
+            for widgedid in list(self.canvas.find_withtag('tree || blob')):
+                tags = self.canvas.gettags(widgedid)
+                if tags != ():
+                    self.delete_vertex(tags[0], False)
         # Update scroll region if drawing expands bounds
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
-    def _create_edge_line(self, src_vid, dst_vid, edge_type=True, label=None):
-        s = self.model.vertices[src_vid]
-        d = self.model.vertices[dst_vid]
-        srx, sry = self._get_vertex_dimensions(src_vid)
-        drx, dry = self._get_vertex_dimensions(dst_vid)
+    def _create_edge_line(self, srclabel, dstlabel, edge_type=True, label=None):
+        s = self.model.vertices[srclabel]
+        d = self.model.vertices[dstlabel]
+        srx, sry = self._get_vertex_dimensions(srclabel)
+        drx, dry = self._get_vertex_dimensions(dstlabel)
 
         x1o, y1o, x2o, y2o = self._rect_line_endpoints(
             s['x'], s['y'], srx, sry, d['x'], d['y'], drx, dry)
         arrow_style = tk.LAST if edge_type else tk.NONE
         line = self.canvas.create_line(x1o, y1o, x2o, y2o, arrow=arrow_style, width=1, fill='black', 
-                                       tags=[src_vid, dst_vid, self.EDGE])
+                                       tags=[srclabel, dstlabel, self.EDGE])
         label_id = None
         
         # render label with perpendicular offset if present
@@ -582,7 +588,7 @@ class GraphGUI(tk.Tk):
                 font = tkfont.Font()
             label_x, label_y = self._calculate_label_position(x1o, y1o, x2o, y2o)
             label_id = self.canvas.create_text(label_x, label_y, text=label, font=font, fill='black',
-                                               tags=[src_vid, dst_vid, self.EDGELABEL])
+                                               tags=[srclabel, dstlabel, self.EDGELABEL])
             self.canvas.tag_raise(label_id, line)  # put text in front of line for visibility
         
 

@@ -10,7 +10,7 @@ import subprocess
 class GraphModel:
     """Data-only graph model: vertices and directed edges.
 
-    vertices: dict label -> {'x','y','type'}
+    vertices: dict label -> {'x','y','type'}, type in {'commit','branch','tree', 'blob'}
     edges: list of {'src':src_label, 'dst':dst_label, 'oriented':True|False, 'label':str|None}
     """
 
@@ -28,6 +28,7 @@ class GraphModel:
         Requirements:
         - `label` must be a non-empty string.
         - labels are unique; if `label` already exists the method returns False.
+        - type must be one of {'commit','branch','tree','blob'}.
 
         On success returns the label (string). On failure returns False.
         """
@@ -37,6 +38,8 @@ class GraphModel:
         #already exists
         if label in self.vertices:
             return label
+        if vtype not in {'commit', 'branch', 'tree', 'blob'}:
+            return False
         # add vertex keyed by label
         self.vertices[label] = {'x': x, 'y': y, 'type': vtype}
         # increment the numeric counter for any fallback naming
@@ -232,10 +235,45 @@ class GraphModel:
         if tree:
             tree_label = f'{tree[:8]}'
             if tree_label not in self.vertices:
-                self.add_vertex(x + 20, y + 20, tree_label, vtype='container')
+                self.add_vertex(x + 20, y + 20, tree_label, vtype='tree')
             # connect commit to tree
             try:
                 self.add_edge(f'{commit_hash[:8]}', tree_label, label='root', edge_type=False)
             except Exception:
                 pass
+        return True
+
+    def load_tree_contents(self, tree_hash, x=100, y=60, spacing=150):
+        """Load the contents of a git tree object given its hash.
+
+        Adds vertices for files and subtrees, positioned starting at (x, y).
+        Returns True on success, False on failure.
+        """
+        try:
+            proc = subprocess.run(['git', '-C', self.repo_dir, 'cat-file', '-p',tree_hash],
+                                  capture_output=True, text=True, check=True)
+            out = proc.stdout
+        except Exception:
+            return False
+
+        lines = out.splitlines()
+        xt = x
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) == 4:
+                mode, type_, obj_hash, name = parts[0], parts[1], parts[2], parts[3]
+                short_hash = obj_hash[:8]
+                obj_label = f'{short_hash}'
+                vtype = type_ if type_ in ['blob', 'tree'] else 'unkown'
+                if obj_label not in self.vertices:
+                    self.add_vertex(xt, y + 40, obj_label, vtype=vtype)
+                # connect tree to object
+                try:
+                    self.add_edge(f'{tree_hash[:8]}', obj_label, label=name, edge_type=False)
+                except Exception:
+                    pass
+                xt += spacing
         return True
