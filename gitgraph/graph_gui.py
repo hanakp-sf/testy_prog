@@ -1,13 +1,12 @@
 import tkinter as tk
-from tkinter import simpledialog
-from tkinter import messagebox, ttk
+from tkinter import simpledialog, messagebox, ttk, filedialog
 import tkinter.font as tkfont
 import math
 import sys
 import os
 
 from graph_model import GraphModel
-
+from gui_settings import UserSettings
 
 class GraphGUI(tk.Tk):
     def __init__(self, model=None):
@@ -32,18 +31,20 @@ class GraphGUI(tk.Tk):
         # Edge line: SRC_VID (from model), DEST_VID (from model), EDGE (constant)
         # Edge label: SRC_VID (from model), DEST_VID (from model), EDGELABEL (constant)
 
-        ##Configuation
-        # whether to show tree/blob vertices and edges
-        self._show_trees = tk.BooleanVar(value=True) 
-
         # model injection: use provided model or create a new empty model
-        self.model = model if model else GraphModel()
-        self._repo_dir = self.model.repo_dir  
+        self.model = model if model else GraphModel() 
+
+        ## Load settings
+        # whether to show tree/blob vertices and edges
+        self._settings = UserSettings()
+        self._settings.load()
+        self._show_trees = tk.BooleanVar(value=self._settings.get_show_tree())
+        self._current_file = '<Untitled>' 
 
         # GUI mappings            
         self._drag_data = {'vertex': None, 'x': 0, 'y': 0}
+        self._user_actions = [] # list of user actions for debugging entry = ('action', 'object_label')
 
-        self.title("Git graph for " + self._repo_dir if self._repo_dir else "<untitled>")
         self.geometry("900x600")
         self.minsize(500, 500)
 
@@ -76,7 +77,7 @@ class GraphGUI(tk.Tk):
         # Support for context menu actions
         self._context_click = None
         # build menubar and context menu
-        self.menubar, self.commit_ctx_menu, self.tree_ctx_menu = self._build_menus()
+        self.menubar, self.file_menu, self.commit_ctx_menu, self.tree_ctx_menu, self.blob_ctx_menu = self._build_menus()
         self.config(menu=self.menubar)
 
         # Instructions label
@@ -87,19 +88,29 @@ class GraphGUI(tk.Tk):
         self.status = tk.Label(self, text=instr, anchor='w', justify='left')
         self.status.pack(side="bottom", fill=tk.X)
 
-        # render any existing model state into the GUI
-        self._render_model()
+        # trigger function execution on exit
+        self.protocol("WM_DELETE_WINDOW", self.on_exit)
 
     def _build_menus(self):
         commit_ctx_menu = tk.Menu(self, tearoff=0)
         commit_ctx_menu.add_command(label='Show related', command=self._context_load_commit_connected)
         tree_ctx_menu = tk.Menu(self, tearoff=0)
         tree_ctx_menu.add_command(label='Show tree', command=self._context_show_commit_tree)
+        tree_ctx_menu.add_command(label='Hide tree', command=self._context_hide_tree)
+        blob_ctx_menu = tk.Menu(self, tearoff=0)
+        blob_ctx_menu.add_command(label='Show this path only', command=self._context_show_specific_path)
         # Menu bar with Vertex submenu
         menubar = tk.Menu(self)
-        vertex_menu = tk.Menu(menubar, tearoff=0)
-        vertex_menu.add_command(label='Add vertex...', command=self._menu_add_vertex)
-        menubar.add_cascade(label='Vertex', menu=vertex_menu)
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label='Open git folder', command=self._menu_open_folder)
+        file_menu.add_separator()
+        file_menu.add_command(label='Open diagram file', command=self._menu_open_file)
+        file_menu.add_command(label='Save diagram file', command=self._menu_save_file)
+        file_menu.add_separator()
+        file_menu.add_separator()
+        file_menu.add_command(label='Exit', command=self._menu_exit_app)
+        self._update_mru_menu(file_menu)
+        menubar.add_cascade(label='File', menu=file_menu)
         view_menu = tk.Menu(menubar, tearoff=0)
         view_menu.add_checkbutton(label='Show containers', 
                                   onvalue=True, offvalue=False,
@@ -107,9 +118,10 @@ class GraphGUI(tk.Tk):
                                   command=self._toggle_show_trees)
         menubar.add_cascade(label='View', menu=view_menu)
         model_menu = tk.Menu(menubar, tearoff=0)
-        model_menu.add_command(label='Print model', command=self._menu_print_model)
-        menubar.add_cascade(label='Model', menu=model_menu)
-        return menubar, commit_ctx_menu, tree_ctx_menu
+        model_menu.add_command(label='Model', command=self._menu_print_model)
+        model_menu.add_command(label='Actions', command=self._menu_print_actions)
+        menubar.add_cascade(label='Print', menu=model_menu)
+        return menubar, file_menu, commit_ctx_menu, tree_ctx_menu, blob_ctx_menu
 
     def _build_bindings(self):
         # self.bind('<Delete>', self.on_delete_key) disabled delete
@@ -117,6 +129,24 @@ class GraphGUI(tk.Tk):
         self.canvas.bind('<B1-Motion>', self.on_left_button_drag)
         self.canvas.bind('<ButtonRelease-1>', self.on_left_button_up)
         self.canvas.bind('<Button-3>', self.on_right_button_down)
+
+    def _update_mru_menu(self, menu):
+        last_idx = menu.index('Exit')
+        #delete menu items, skip separator
+        i = last_idx - 2
+        while (menu.type(i) != 'separator'):
+            menu.delete(i)
+            i -= 1
+        last_idx = menu.index('Exit')
+        mru_list = self._settings.get_mru_list()
+        if len(mru_list) == 0 :
+            menu.insert_command(last_idx - 1, label="(No recent files)", state="disabled")
+        else:
+            for filepath in reversed(mru_list):
+                menu.insert_command( last_idx - 1,
+                    label=filepath,
+                    command=lambda fp=filepath: self.open_file(fp)
+                )
 
     # ------------------ Vertex helpers ------------------
     def _measure_label(self, label):
@@ -241,7 +271,6 @@ class GraphGUI(tk.Tk):
             return
         self._create_edge_line(srclabel, dstlabel, edge_type, label)
 
-
     def _rect_line_endpoints(self, x1, y1, rx1, ry1, x2, y2, rx2, ry2):
         """Compute line endpoints where the line between centers meets the rectangle borders.
 
@@ -334,6 +363,30 @@ class GraphGUI(tk.Tk):
                 label_x, label_y = self._calculate_label_position(x1o, y1o, x2o, y2o)
                 self.canvas.coords(label_id, label_x, label_y)
 
+    def _create_edge_line(self, srclabel, dstlabel, edge_type=True, label=None):
+        s = self.model.vertices[srclabel]
+        d = self.model.vertices[dstlabel]
+        srx, sry = self._get_vertex_dimensions(srclabel)
+        drx, dry = self._get_vertex_dimensions(dstlabel)
+
+        x1o, y1o, x2o, y2o = self._rect_line_endpoints(
+            s['x'], s['y'], srx, sry, d['x'], d['y'], drx, dry)
+        arrow_style = tk.LAST if edge_type else tk.NONE
+        line = self.canvas.create_line(x1o, y1o, x2o, y2o, arrow=arrow_style, width=1, fill='black', 
+                                       tags=[srclabel, dstlabel, self.EDGE])
+        label_id = None
+        
+        # render label with perpendicular offset if present
+        if label:
+            try:
+                font = tkfont.nametofont("TkDefaultFont")
+            except Exception:
+                font = tkfont.Font()
+            label_x, label_y = self._calculate_label_position(x1o, y1o, x2o, y2o)
+            label_id = self.canvas.create_text(label_x, label_y, text=label, font=font, fill='black',
+                                               tags=[srclabel, dstlabel, self.EDGELABEL])
+            self.canvas.tag_raise(label_id, line)  # put text in front of line for visibility
+
     # ------------------ Event handlers ------------------
     def on_left_button_down(self, event):
         x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
@@ -393,27 +446,24 @@ class GraphGUI(tk.Tk):
     def on_right_button_down(self, event):
         x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
         vlabel = self.find_vertex_at(x, y)
-        if vlabel and (self.model.vertices[vlabel].get('type') != 'branch'):
+        
+        menu_map = {
+            'commit': self.commit_ctx_menu,
+            'tree': self.tree_ctx_menu,
+            "blob": self.blob_ctx_menu,
+            'branch': None
+        }
+        ctx_menu = menu_map.get(self.model.vertices[vlabel].get('type'), None) if vlabel else None
+        if ctx_menu is not None:
             # show context menu for commit
             self._context_click = (x, y)
-            if self.model.vertices[vlabel].get('type') == 'commit':
+            try:
+                ctx_menu.tk_popup(event.x_root, event.y_root)
+            finally:
                 try:
-                    self.commit_ctx_menu.tk_popup(event.x_root, event.y_root)
-                finally:
-                    try:
-                        self.commit_ctx_menu.grab_release()
-                    except Exception:
-                        pass
-            # show context menu for tree
-            if self.model.vertices[vlabel].get('type') == 'tree':
-                try:
-                    self.tree_ctx_menu.tk_popup(event.x_root, event.y_root)
-                finally:
-                    try:
-                        self.tree_ctx_menu.grab_release()
-                    except Exception:
-                        pass                    
-            return
+                    ctx_menu.grab_release()
+                except Exception:
+                    pass
 
     def _context_add_vertex(self):
         """Create a vertex at the last right-click context position.
@@ -437,6 +487,7 @@ class GraphGUI(tk.Tk):
             return
         x, y = self._context_click
         vlabel = self.find_vertex_at(x, y)
+        self._user_actions.append( ('show_commit_related', vlabel) )
         ok = self.model.load_commit_related(vlabel, self.model.vertices[vlabel].get('x'), self.model.vertices[vlabel].get('y') + 40)
         if ok:
             self._render_model()
@@ -447,10 +498,92 @@ class GraphGUI(tk.Tk):
             return
         x, y = self._context_click
         vlabel = self.find_vertex_at(x, y)
+        self._user_actions.append( ('show_tree', vlabel) )
         ok = self.model.load_tree_contents(vlabel, self.model.vertices[vlabel].get('x'), self.model.vertices[vlabel].get('y') + 60)
         if ok:
             self._render_model()
         self._context_click = None
+
+    def _context_show_specific_path(self):
+        if not self._context_click:
+            return
+        x, y = self._context_click
+        print("not implemented yet")
+        self._context_click = None
+
+    def _context_hide_tree(self):
+        if not self._context_click:
+            return
+        x, y = self._context_click
+        vlabel = self.find_vertex_at(x, y)
+        if vlabel is not None:
+            self._user_actions.append( ('hide_tree', vlabel) )
+            self.model.hide_tree(vlabel)
+            self._render_model()
+        self._context_click = None
+
+    def _menu_open_folder(self):
+        """Open a git repository folder and load its branches."""
+        try:
+            from tkinter import filedialog
+            folder = filedialog.askdirectory(title="Select Git repository folder", mustexist=True)
+        except Exception:
+            folder = None
+        if not folder:
+            return
+        if not os.path.isdir(os.path.join(folder, '.git')):
+            try:
+                messagebox.showerror("Open folder", f"Folder '{folder}' is not a valid Git repository (missing .git).", parent=self)
+            except Exception:
+                pass
+            return
+        # clear existing model and GUI
+        self.model = GraphModel()
+        try:
+            self.model.load_branches(folder)
+        except Exception:
+            pass
+        self.on_new_model()
+
+    def _menu_save_file(self):
+        """Save the current graph model to a file."""
+        try:
+            filepath = filedialog.asksaveasfilename(title="Save diagram file", defaultextension=".ggd",
+                                                    filetypes=[("Git Graph Diagram", "*.ggd"), ("All files", "*.*")])
+        except Exception:
+            filepath = None
+        if not filepath:
+            return
+        try:
+            self.model.save_to_file(filepath)
+            self._current_file = filepath
+            # update mru and menu
+            self._settings.add_file(filepath)
+            self._update_mru_menu(self.file_menu)
+            try:
+                messagebox.showinfo("Save diagram", f"Diagram saved to '{filepath}'.", parent=self)
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                messagebox.showerror("Save diagram", f"Error saving diagram to '{filepath}': {e}", parent=self)
+            except Exception:
+                pass
+
+    def _menu_open_file(self):
+        """Open a graph diagram file and load the model."""
+        try:
+            filepath = filedialog.askopenfilename(title="Open diagram file",
+                                                  filetypes=[("Git Graph Diagram", "*.ggd"), ("All files", "*.*")])
+        except Exception:
+            filepath = None
+        if not filepath:
+            return
+        self.open_file(filepath)
+
+    def _menu_exit_app(self):
+        self._settings.save()
+        self.quit()
 
     def _menu_add_vertex(self):
         """Add a vertex using current pointer location (or canvas center).
@@ -486,8 +619,9 @@ class GraphGUI(tk.Tk):
         self.create_vertex(x, y, label=lbl)
 
     def _toggle_show_trees(self):
-        """Toggle visibility of tree vertices and edges."""
-        self._show_trees = not self._show_trees
+        #variable is toggled, just render
+        self._settings.set_show_tree(self._show_trees.get())
+        self._user_actions.append( ('toggle_show_trees', '->' + str(self._show_trees.get())) )
         self._render_model()
             
     def _menu_print_model(self):
@@ -495,12 +629,21 @@ class GraphGUI(tk.Tk):
         try:
             print("Vertices:")
             for vlabel, v in self.model.vertices.items():
-                print(f"  {vlabel}: type='{v.get('type')}', pos=({v.get('x')},{v.get('y')})")
+                print(f"  {vlabel}: type='{v.get('type')}', pos=({v.get('x')},{v.get('y')}, visible={v.get('visible')})")
             print("Edges:")
             for e in self.model.edges:
                 print(f"  {e}")
         except Exception as e:
             print(f"Error printing model: {e}")
+
+    def _menu_print_actions(self):
+        """Print the list of user actions to the console for debugging."""
+        try:
+            print("User actions:")
+            for action in self._user_actions:
+                print(f"  {action}")
+        except Exception as e:
+            print(f"Error printing actions: {e}")
 
     def on_delete_key(self, event):
         # delete currently highlighted vertex (red outline)
@@ -516,22 +659,33 @@ class GraphGUI(tk.Tk):
         if to_delete:
             self.delete_vertex(to_delete)
     
-    def _trigger_lazy_load(self, branch_label):
-        """Load commits for a branch on-demand if it's a branch vertex."""
-        print(f"Triggering lazy load for branch {branch_label} in {self._repo_dir}", )
-        if not self._repo_dir:
-            return
-        v = self.model.vertices.get(branch_label)
-        if not v or v.get('type') != 'branch':
-            return
-        # load commits for this branch
+    def on_new_model(self):
+        new_title = '<untitled>'
+
+        if self.model.repo_dir:
+            new_title = self.model.repo_dir + ' (' + self._current_file + ')'
+        # clear existing GUI
+        self.canvas.delete("all")
+        self.title("Git graph for " + new_title)
+        self._render_model()
+
+    def on_exit(self):
+        self._settings.save()
+        self.destroy()
+
+    def open_file(self, filepath):
         try:
-            ok = self.model.load_commits_for_branch(self._repo_dir, branch_label)
-            if ok:
-                # re-render the model to display new commits
-                self._render_model()
-        except Exception:
-            pass
+            self.model.load_from_file(filepath)
+            self._current_file = filepath
+            self.on_new_model()
+            # update mru and menu
+            self._settings.add_file(filepath)
+            self._update_mru_menu(self.file_menu)
+        except Exception as e:
+            try:
+                messagebox.showerror("Open diagram", f"Error loading diagram from '{filepath}': {e}", parent=self)
+            except Exception:
+                pass
 
     # ------------------ Model rendering ------------------
     def _render_model(self):
@@ -559,37 +713,18 @@ class GraphGUI(tk.Tk):
                     continue
                 self._create_edge_line(s_v, d_v, edge_type, edge_label)
         # delete tree/blob vertices and edges if configured so, but do not modify model
-        if not self._show_trees:
+        if not self._show_trees.get():
             for widgedid in list(self.canvas.find_withtag('tree || blob')):
                 tags = self.canvas.gettags(widgedid)
                 if tags != ():
                     self.delete_vertex(tags[0], False)
+        # hide vertices marked as not visible in the model
+        for labelid in self.model.vertices:
+            if not self.model.vertices[labelid].get('visible', True):
+                self.delete_vertex(labelid, False)
         # Update scroll region if drawing expands bounds
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
-    def _create_edge_line(self, srclabel, dstlabel, edge_type=True, label=None):
-        s = self.model.vertices[srclabel]
-        d = self.model.vertices[dstlabel]
-        srx, sry = self._get_vertex_dimensions(srclabel)
-        drx, dry = self._get_vertex_dimensions(dstlabel)
-
-        x1o, y1o, x2o, y2o = self._rect_line_endpoints(
-            s['x'], s['y'], srx, sry, d['x'], d['y'], drx, dry)
-        arrow_style = tk.LAST if edge_type else tk.NONE
-        line = self.canvas.create_line(x1o, y1o, x2o, y2o, arrow=arrow_style, width=1, fill='black', 
-                                       tags=[srclabel, dstlabel, self.EDGE])
-        label_id = None
-        
-        # render label with perpendicular offset if present
-        if label:
-            try:
-                font = tkfont.nametofont("TkDefaultFont")
-            except Exception:
-                font = tkfont.Font()
-            label_x, label_y = self._calculate_label_position(x1o, y1o, x2o, y2o)
-            label_id = self.canvas.create_text(label_x, label_y, text=label, font=font, fill='black',
-                                               tags=[srclabel, dstlabel, self.EDGELABEL])
-            self.canvas.tag_raise(label_id, line)  # put text in front of line for visibility
         
 
 if __name__ == '__main__':
@@ -612,6 +747,7 @@ if __name__ == '__main__':
         model.load_branches(repo_dir)
     except Exception:
         pass
-    app = GraphGUI(model=model) #when model attached, it is rendered on init
-    
+    app = GraphGUI(model=model)
+    # render initial model
+    app.on_new_model()
     app.mainloop()

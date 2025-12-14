@@ -3,14 +3,13 @@
 Contains class GraphModel: simple in-memory directed graph with vertex
 attributes (x,y,label) and edge list.
 """
-
 import os
 import subprocess
 
 class GraphModel:
     """Data-only graph model: vertices and directed edges.
 
-    vertices: dict label -> {'x','y','type'}, type in {'commit','branch','tree', 'blob'}
+    vertices: dict label -> {'x','y','type', 'visible'}, type in {'commit','branch','tree', 'blob'}, visble is bool
     edges: list of {'src':src_label, 'dst':dst_label, 'oriented':True|False, 'label':str|None}
     """
 
@@ -19,8 +18,7 @@ class GraphModel:
         self.vertices = {}
         self.edges = []
         self._next_vid = 1
-        # keep numeric counter for fallback/default labels if needed        
-        self._commits_metadata = {}  # hash -> {'parents': [hashes]}
+        # keep numeric counter for fallback/default labels if needed
 
     def add_vertex(self, x, y, label, vtype='commit'):
         """Add a vertex keyed by `label`.
@@ -41,7 +39,7 @@ class GraphModel:
         if vtype not in {'commit', 'branch', 'tree', 'blob'}:
             return False
         # add vertex keyed by label
-        self.vertices[label] = {'x': x, 'y': y, 'type': vtype}
+        self.vertices[label] = {'x': x, 'y': y, 'type': vtype, 'visible': True}
         # increment the numeric counter for any fallback naming
         self._next_vid += 1
         return label
@@ -236,9 +234,12 @@ class GraphModel:
             tree_label = f'{tree[:8]}'
             if tree_label not in self.vertices:
                 self.add_vertex(x + 20, y + 20, tree_label, vtype='tree')
+            else:
+                # if found make sure it's visible
+                self.vertices[tree_label]['visible'] = True
             # connect commit to tree
             try:
-                self.add_edge(f'{commit_hash[:8]}', tree_label, label='root', edge_type=False)
+                self.add_edge(f'{commit_hash[:8]}', tree_label, label='<ROOT>', edge_type=False)
             except Exception:
                 pass
         return True
@@ -270,6 +271,9 @@ class GraphModel:
                 vtype = type_ if type_ in ['blob', 'tree'] else 'unkown'
                 if obj_label not in self.vertices:
                     self.add_vertex(xt, y + 40, obj_label, vtype=vtype)
+                else:
+                    # if found make sure it's visible
+                    self.vertices[obj_label]['visible'] = True
                 # connect tree to object
                 try:
                     self.add_edge(f'{tree_hash[:8]}', obj_label, label=name, edge_type=False)
@@ -277,3 +281,88 @@ class GraphModel:
                     pass
                 xt += spacing
         return True
+    
+    def hide_tree(self, tree_hash):
+        """Hide the tree vertex and its connected blobs and subtrees."""
+        tree_label = f'{tree_hash[:8]}'
+        if tree_label in self.vertices:
+            self.vertices[tree_label]['visible'] = False
+            # hide connected blobs and subtrees
+            for e in [item for item in self.edges if item['src'] == tree_label]:
+                dst = e['dst']
+                if self.vertices[dst]['type'] == 'tree':
+                    # recursively hide subtrees
+                    self.hide_tree(dst)
+                if self.vertices[dst]['type'] == 'blob':
+                    # if any blob's parent is visible, keep it visible
+                    parents = [item for item in self.edges if item['dst'] == dst]
+                    if not any(self.vertices[p['src']]['visible'] for p in parents):
+                        self.vertices[dst]['visible'] = False
+    
+    def save_to_file(self, filepath):
+        """Save the graph model to a file in a simple text format.
+
+        global settings are saved as:
+        GB repo_dir
+
+        Each vertex is saved as:
+        VX label x y type visible
+
+        Each edge is saved as:
+        EG src_label dst_label oriented label
+
+        where 'oriented' is 1 for True and 0 for False, and 'label' can be 'None'.
+        Exceptions raised are propagated to the caller.
+        """
+        with open(filepath, 'w', encoding='utf-8') as f:
+            # global
+            f.write(f"GB {self.repo_dir if self.repo_dir else 'None'}\n")
+            # vertices
+            for label, attrs in self.vertices.items():
+                line = f"VX {label} {int(attrs['x'])} {int(attrs['y'])} {attrs['type']} {int(attrs['visible'])}\n"
+                f.write(line)
+            # edges
+            for e in self.edges:
+                oriented = 1 if e['oriented'] else 0
+                elabel = e['label'] if e['label'] is not None else 'None'
+                line = f"EG {e['src']} {e['dst']} {oriented} {elabel}\n"
+                f.write(line)
+        
+    def load_from_file(self, filepath):
+        """Load the graph model from a file in the simple text format.
+
+        Clears existing vertices and edges before loading.
+        Exceptions raised are propagated to the caller.
+        """
+        with open(filepath, 'r', encoding='utf-8') as f:
+            self.vertices.clear()
+            self.edges.clear()
+            for line in f:
+                line = line.strip()
+                if line.startswith('VX'):
+                    parts = line.split()
+                    if len(parts) == 6:
+                        _, label, x, y, vtype, visible = parts
+                        self.vertices[label] = {
+                            'x': int(x),
+                            'y': int(y),
+                            'type': vtype,
+                            'visible': bool(int(visible))
+                        }
+                elif line.startswith('EG'):
+                    parts = line.split()
+                    if len(parts) == 5:
+                        _, src, dst, oriented, elabel = parts
+                        oriented_bool = bool(int(oriented))
+                        elabel_val = elabel if elabel != 'None' else None
+                        self.edges.append({
+                            'src': src,
+                            'dst': dst,
+                            'oriented': oriented_bool,
+                            'label': elabel_val
+                        })
+                elif line.startswith('GB'):
+                    parts = line.split()
+                    if len(parts) == 2:
+                        _, dir = parts
+                        self.repo_dir = dir if dir != 'None' else None
