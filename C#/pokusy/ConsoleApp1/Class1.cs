@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -16,6 +17,26 @@ namespace ConsoleApp
 
             Console.WriteLine($"Key={VarName}, Value={Environment.GetEnvironmentVariable(VarName)}");
         }
+        public static void MoveDate()
+        {
+            var dt = DateTime.UtcNow;
+            var dtMonths = dt.AddMonths(-3);
+            var dtDays = dt.AddDays(-92);
+
+            Console.WriteLine($"Date={dt}, Back3months={dtMonths:yyyy-MM-dd}, Back92days={dtDays:yyyy-MM-dd}");
+        }
+
+        public static void testConvert()
+        {
+            var value = 0.00;
+            string item = "-0.009999999776482582";
+
+            value = Math.Round(Convert.ToDouble(item), 0);
+
+            Console.WriteLine($"{value}");
+        }
+
+
     }
     public class Pokusy
     {
@@ -94,11 +115,16 @@ namespace ConsoleApp
             }
 
             Console.WriteLine("\nGroupby results:");
+            Console.WriteLine($"\n{groupByNameQuery}");
             foreach (var yearGroup in groupByNameQuery)
             {
                 Console.WriteLine($"Key: {yearGroup.Key}");
+                Console.WriteLine($"\tComplete entry: {yearGroup}");
+                Console.WriteLine($"\tEntry per properties:");
                 foreach (Reading r in yearGroup)
-                    Console.WriteLine($"\t{r.ID}, {r.Name}, {r.Value}");
+                    Console.WriteLine($"\t\t{r.ID}, {r.Name}, {r.Value}");
+                Console.WriteLine($"\tEntry after serialization:");
+                Console.WriteLine($"\t\t{JsonConvert.SerializeObject(yearGroup)}");
             }
 
 

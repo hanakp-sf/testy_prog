@@ -1,0 +1,22 @@
+
+to do:
+- DONE pri spusteni nahrat vsetky branches + 1 commit ku kazdej + rodica ku kazdemu commit
+- DONE odstranit edges v GUI, nahradit pouzitim tags
+- DONE urobit gui.render_model tak, ze prebehne gui model and graph model tak ze ak existuje vrchol alebo hrana v graph modeli, tak ju prida do gui modelu
+- DONE upravit graph model tak, ze label nie je property vrcholu, staci ak je id vrcholu
+- DONE upravit graph model tak, ze rx, ry nie je property vrcholu, ak to treba, nech to je sucastou gui modelu
+- DONE remove _branch_position, da sa nahradit hladanim v zozname vrcholov
+- DONE odstranit right-click-drag, je to na presuvanie hran medzi vrcholmi
+- DONE pouzit tagging pre canvas and find_withtag("current") pre najdenie focused canvas
+- DONE remove vertex_by_canvas from GUI
+- DONE scrolovatelne okno
+- DONE zobrazenie tree pre commit
+    - DONE ked sa nahra commit do modelu, automaticky sa nahra tree object + linka nan 
+    - DONE podla nastavenia view flagu sa tree objects aj zobrazia v render_model
+    - DONE tree object maju context menu show tree ktory nahra cely strom objektov
+- DONE ulozit diagram do suboru a nahrat ho zo suboru, spolu s global config
+- DONE vybrat z menu git adresar na spracovanie
+- vybrat v diagrame blob a potom vsetky tree/blobs ktore nie su v path sa skryju
+- DONE vybrat v diagrame tree a kontext menu umozni jeho skrytie aj s children. 
+- DONE maintain MRU files
+- DONE keep track of user actions, print them at the end of session 
