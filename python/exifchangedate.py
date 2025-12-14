@@ -96,6 +96,8 @@ def print_DateOriginal(imagepath: str):
 # Example usage
 if __name__ == "__main__":
     # image path with pictures
+    # Zuzka 50ka -> posun datetime.timedelta(days=23*365 + 7*31 + 8, hours=8, minutes=30)
+    # Tomi birmovka -> datetime.timedelta(days=3*365 + 10*31 + 2, hours=22, minutes=21)
     image_path = "C:\\home\\rodina\\fotografie\\nove\\zuzka50\\"
    
     for image_file in os.listdir(image_path):
