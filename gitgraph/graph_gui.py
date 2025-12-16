@@ -25,6 +25,12 @@ class GraphGUI(tk.Tk):
         self.EDGE = 'edge'
         self.EDGELABEL = 'etext'
 
+        # Default status message
+        self.DEFAULT_MESSAGE = (
+            "Left-click+drag vertex: move vertex.\n"
+            "Right-click vertex: context menu."
+        )
+
         # Widget tags
         # Vertex rectangle: VID (from model), TYPE (from model), VERTEX ( constant)
         # Vertex label: VID (from model), VERTEXLABEL (constant)
@@ -39,7 +45,7 @@ class GraphGUI(tk.Tk):
         self._settings = UserSettings()
         self._settings.load()
         self._show_trees = tk.BooleanVar(value=self._settings.get_show_tree())
-        self._current_file = '<Untitled>' 
+        self._current_file = '<Untitled>'
 
         # GUI mappings            
         self._drag_data = {'vertex': None, 'x': 0, 'y': 0}
@@ -80,12 +86,7 @@ class GraphGUI(tk.Tk):
         self.menubar, self.file_menu, self.commit_ctx_menu, self.tree_ctx_menu, self.blob_ctx_menu = self._build_menus()
         self.config(menu=self.menubar)
 
-        # Instructions label
-        instr = (
-            "Left-click+drag vertex: move vertex.\n"
-            "Right-click vertex: context menu."
-        )
-        self.status = tk.Label(self, text=instr, anchor='w', justify='left')
+        self.status = tk.Label(self, text=self.DEFAULT_MESSAGE, anchor='w', justify='left')
         self.status.pack(side="bottom", fill=tk.X)
 
         # trigger function execution on exit
@@ -106,6 +107,7 @@ class GraphGUI(tk.Tk):
         file_menu.add_separator()
         file_menu.add_command(label='Open diagram file', command=self._menu_open_file)
         file_menu.add_command(label='Save diagram file', command=self._menu_save_file)
+        file_menu.add_command(label='Save as', command=self._menu_saveas_file)
         file_menu.add_separator()
         file_menu.add_separator()
         file_menu.add_command(label='Exit', command=self._menu_exit_app)
@@ -116,6 +118,7 @@ class GraphGUI(tk.Tk):
                                   onvalue=True, offvalue=False,
                                   variable=self._show_trees,
                                   command=self._toggle_show_trees)
+        view_menu.add_command(label='Reset filter', command=self._menu_view_reset)
         menubar.add_cascade(label='View', menu=view_menu)
         model_menu = tk.Menu(menubar, tearoff=0)
         model_menu.add_command(label='Model', command=self._menu_print_model)
@@ -147,6 +150,22 @@ class GraphGUI(tk.Tk):
                     label=filepath,
                     command=lambda fp=filepath: self.open_file(fp)
                 )
+
+    def update_status_bar(self, message = None):
+        if message is None:
+            if len(self.model._filter) > 0:
+                self.status.config(text = 'Filter path: ' + self.model.get_filter_as_string())
+            else:
+                self.status.config(text = self.DEFAULT_MESSAGE)
+        else:
+            self.status.config(text = message)
+
+    def update_title(self):
+        new_title = '<untitled>'
+
+        if self.model.repo_dir:
+            new_title = self.model.repo_dir + ' (' + self._current_file + ')'
+        self.title("Git graph for " + new_title)
 
     # ------------------ Vertex helpers ------------------
     def _measure_label(self, label):
@@ -508,7 +527,11 @@ class GraphGUI(tk.Tk):
         if not self._context_click:
             return
         x, y = self._context_click
-        print("not implemented yet")
+        vlabel = self.find_vertex_at(x, y)
+        self.model.build_filter(vlabel)
+        self.model.apply_filter()
+        self.update_status_bar()
+        self._render_model()
         self._context_click = None
 
     def _context_hide_tree(self):
@@ -546,6 +569,16 @@ class GraphGUI(tk.Tk):
         self.on_new_model()
 
     def _menu_save_file(self):
+        """Save the current graph model to the file."""
+        try:
+            self.model.save_to_file(self._current_file)
+        except Exception as e:
+            try:
+                messagebox.showerror("Save diagram", f"Error saving diagram to '{filepath}': {e}", parent=self)
+            except Exception:
+                pass
+
+    def _menu_saveas_file(self):
         """Save the current graph model to a file."""
         try:
             filepath = filedialog.asksaveasfilename(title="Save diagram file", defaultextension=".ggd",
@@ -560,10 +593,7 @@ class GraphGUI(tk.Tk):
             # update mru and menu
             self._settings.add_file(filepath)
             self._update_mru_menu(self.file_menu)
-            try:
-                messagebox.showinfo("Save diagram", f"Diagram saved to '{filepath}'.", parent=self)
-            except Exception:
-                pass
+            self.update_title()
         except Exception as e:
             try:
                 messagebox.showerror("Save diagram", f"Error saving diagram to '{filepath}': {e}", parent=self)
@@ -623,7 +653,13 @@ class GraphGUI(tk.Tk):
         self._settings.set_show_tree(self._show_trees.get())
         self._user_actions.append( ('toggle_show_trees', '->' + str(self._show_trees.get())) )
         self._render_model()
-            
+
+    def _menu_view_reset(self):
+        self.model.reset_filter()
+        self.model.apply_filter()
+        self._render_model()
+        self.update_status_bar()
+
     def _menu_print_model(self):
         """Print the current model to the console for debugging."""
         try:
@@ -660,13 +696,10 @@ class GraphGUI(tk.Tk):
             self.delete_vertex(to_delete)
     
     def on_new_model(self):
-        new_title = '<untitled>'
-
-        if self.model.repo_dir:
-            new_title = self.model.repo_dir + ' (' + self._current_file + ')'
         # clear existing GUI
         self.canvas.delete("all")
-        self.title("Git graph for " + new_title)
+        self.update_status_bar()
+        self.update_title()
         self._render_model()
 
     def on_exit(self):
@@ -724,30 +757,29 @@ class GraphGUI(tk.Tk):
                 self.delete_vertex(labelid, False)
         # Update scroll region if drawing expands bounds
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-
-        
+    
 
 if __name__ == '__main__':
-    # usage: python graph_gui.py <path-to-git-repo>
-    if len(sys.argv) != 2:
-        print("Usage: python graph_gui.py <git-repo-directory>", file=sys.stderr)
-        sys.exit(1)
-    repo_dir = sys.argv[1]
-    if not os.path.isdir(repo_dir):
-        print(f"Error: '{repo_dir}' is not a directory", file=sys.stderr)
-        sys.exit(1)
-    # simple check for a git repo: presence of a .git directory
-    if not os.path.isdir(os.path.join(repo_dir, '.git')):
-        print(f"Error: '{repo_dir}' does not look like a git repository (missing .git)", file=sys.stderr)
-        sys.exit(1)
+    startup = 'NOPARAMS'
+    # usage: python graph_gui.py <path-to-git-repo>/<diagram-file>
+    if len(sys.argv) == 2:
+        # check arguments
+        param = sys.argv[1]
+        if os.path.isdir(param) and os.path.isdir(os.path.join(param, '.git')):
+            startup = 'GITDIR'
+        else:
+            startup = 'DIAGRAMFILE'
 
     model = GraphModel()
-    # load only branch vertices, skip commits for fast startup (lazy-load on demand)
+    app = GraphGUI(model=model)
+    # load only branch vertices and tip commits for fast startup
     try:
-        model.load_branches(repo_dir)
+        if startup == 'GITDIR':
+            model.load_branches(param)
+        if startup == 'DIAGRAMFILE':
+            app.open_file(param)
     except Exception:
         pass
-    app = GraphGUI(model=model)
     # render initial model
     app.on_new_model()
     app.mainloop()

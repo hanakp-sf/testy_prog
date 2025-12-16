@@ -9,14 +9,15 @@ import subprocess
 class GraphModel:
     """Data-only graph model: vertices and directed edges.
 
-    vertices: dict label -> {'x','y','type', 'visible'}, type in {'commit','branch','tree', 'blob'}, visble is bool
-    edges: list of {'src':src_label, 'dst':dst_label, 'oriented':True|False, 'label':str|None}
+    vertices: dict label -> {'x','y','type', 'visible'}, type in {'commit','branch','tree', 'blob'}, visible is bool
+    edges: list of {'src':src_label, 'dst':dst_label, 'oriented':True|False, 'label':str|None, 'path':str|None}
     """
 
     def __init__(self):
         self.repo_dir = None  
         self.vertices = {}
         self.edges = []
+        self._filter = []
         self._next_vid = 1
         # keep numeric counter for fallback/default labels if needed
 
@@ -68,7 +69,13 @@ class GraphModel:
         # check if edge already exists (same direction)
         if any(e['src'] == src_label and e['dst'] == dst_label for e in self.edges):
             return False
-        self.edges.append({'src': src_label, 'dst': dst_label, 'oriented': edge_type, 'label': label})
+        self.edges.append({'src': src_label, 'dst': dst_label, 'oriented': edge_type, 'label': label, 'path':None})
+        current_edge = self.edges[-1]
+        path = self.get_path(dst_label)
+        current_edge['path'] = '/' + '/'.join(path[1:]) if len(path) > 0 else None
+        # hide destination vertex if not on filter path
+        if len(self._filter) > 0 and current_edge['path'] is not None:
+            self.vertices[dst_label]['visible'] = self.get_filter_as_string().startswith(current_edge['path'])
         return True
 
     def load_branches(self, repo_dir, x0=100, y=60, spacing=150):
@@ -298,7 +305,36 @@ class GraphModel:
                     parents = [item for item in self.edges if item['dst'] == dst]
                     if not any(self.vertices[p['src']]['visible'] for p in parents):
                         self.vertices[dst]['visible'] = False
-    
+
+    def get_path(self, blob_hash):
+        if blob_hash not in self.vertices and self.vertices[blob_hash][type] not in ['blob', 'tree']:
+            return None
+        path = []
+        current_vertex = blob_hash
+        while (self.vertices[current_vertex]['type'] in ['tree','blob']):
+            edges = [item for item in self.edges if item['dst'] == current_vertex]
+            path.insert(0, edges[0]['label'])
+            current_vertex = edges[0]['src']
+        return path
+
+    def build_filter(self, vlabel):
+        self._filter = self.get_path(vlabel)
+
+    def reset_filter(self):
+        self._filter = []
+
+    def get_filter_as_string(self):
+        return '/' + '/'.join(self._filter[1:]) if len(self._filter) > 0 else ''
+
+    def apply_filter(self):
+        """Logic
+        1. loop all edges with path defined
+        2. path of edge is part of filter path, make destination vertex visible, else hide it
+        """
+        for e in [elem for elem in self.edges if elem['path'] is not None]:
+            self.vertices[e['dst']]['visible'] = self.get_filter_as_string().startswith(e['path']) if len(self._filter) > 0 else True
+
+
     def save_to_file(self, filepath):
         """Save the graph model to a file in a simple text format.
 
@@ -317,6 +353,8 @@ class GraphModel:
         with open(filepath, 'w', encoding='utf-8') as f:
             # global
             f.write(f"GB {self.repo_dir if self.repo_dir else 'None'}\n")
+            # filter
+            f.write(f"FT {str(self._filter)}\n")
             # vertices
             for label, attrs in self.vertices.items():
                 line = f"VX {label} {int(attrs['x'])} {int(attrs['y'])} {attrs['type']} {int(attrs['visible'])}\n"
@@ -337,6 +375,8 @@ class GraphModel:
         with open(filepath, 'r', encoding='utf-8') as f:
             self.vertices.clear()
             self.edges.clear()
+            self._filter.clear()
+            self.repo_dir = None
             for line in f:
                 line = line.strip()
                 if line.startswith('VX'):
@@ -359,10 +399,20 @@ class GraphModel:
                             'src': src,
                             'dst': dst,
                             'oriented': oriented_bool,
-                            'label': elabel_val
+                            'label': elabel_val,
+                            'path': None
                         })
                 elif line.startswith('GB'):
                     parts = line.split()
                     if len(parts) == 2:
                         _, dir = parts
                         self.repo_dir = dir if dir != 'None' else None
+                elif line.startswith('FT'):
+                    parts = line.split()
+                    if len(parts) > 1:
+                        fl = " ".join(parts[1:])
+                        self._filter = eval(fl)
+        # calculate path for each edge
+        for e in self.edges:
+            path = self.get_path(e['dst'])
+            e['path'] = '/' + '/'.join(path[1:]) if len(path) > 0 else None

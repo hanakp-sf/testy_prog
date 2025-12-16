@@ -16,7 +16,14 @@ to do:
     - DONE tree object maju context menu show tree ktory nahra cely strom objektov
 - DONE ulozit diagram do suboru a nahrat ho zo suboru, spolu s global config
 - DONE vybrat z menu git adresar na spracovanie
-- vybrat v diagrame blob a potom vsetky tree/blobs ktore nie su v path sa skryju
+- DONE vybrat v diagrame blob a potom vsetky tree/blobs ktore nie su v path sa skryju
+    - DONE right click na blob zapamata sa cesta k blobu
+    - DONE vsetky tree/blob vrcholy sa zneviditelnia a zviditelnia sa len tie ktory su v path
+        - DONE model.apply_filter
+    - DONE v model.add_edge sa skontroluje ci  filter je zapnut, ak ano, vrchol sa zneviditelni, ak nie je v ceste
+    - DONE v menu je polozka reset filter ktory ho zrusi a prekresli model
+    - DONE ulozit filter do subor ako sucast modelu
 - DONE vybrat v diagrame tree a kontext menu umozni jeho skrytie aj s children. 
 - DONE maintain MRU files
-- DONE keep track of user actions, print them at the end of session 
+- DONE keep track of user actions, print them at the end of session
+- WIP refresh diagramu z repo directory
