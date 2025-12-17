@@ -126,8 +126,19 @@ class GraphModel:
                 pass
             self.load_commit_related(tip, x , y + 40*2)
             x += spacing
-
+        # remove branches from model if they are in repo. Usefull for refresh
+        extra_branches = [item for item in self.vertices if item not in branches and self.vertices[item]['type'] == 'branch']
+        for b in extra_branches:
+            self.delete_vertex(b)            
         return True
+
+    def reload_branches(self, x0=100, y=60, spacing=150):
+        # remove edges linked from branches to commit
+        branches = [v for v in self.vertices if self.vertices[v]['type'] == 'branch' ]
+        self.edges = [e for e in self.edges if e['src'] not in branches]
+        # load current branches     
+        self.load_branches(self.repo_dir, x0, y, spacing)
+
 
     def _resolve_git_dir(self, repo_dir):
         """Return the path to the .git directory for a working tree.

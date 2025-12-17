@@ -26,4 +26,10 @@ to do:
 - DONE vybrat v diagrame tree a kontext menu umozni jeho skrytie aj s children. 
 - DONE maintain MRU files
 - DONE keep track of user actions, print them at the end of session
-- WIP refresh diagramu z repo directory
+- DONE refresh diagramu z repo directory
+    - get fresh branches from repo,
+    - delete links branch->commit, will be updated in load_branches
+    - add if any is missing in model, 
+    - delete from model if any is extra
+- filter v status bar sa zobrazi cervene
+- pri pokuse o ulozenie suboru ak subor neexistuje, zobrazi dialog na zadanie nazvu suboru

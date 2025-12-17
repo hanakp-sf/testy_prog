@@ -14,7 +14,7 @@ class GraphGUI(tk.Tk):
 
         # colors per vertex type
         self.vertex_colors = {
-            'branch': '#ffff00',
+            'branch': "#2EF82E",
             'commit': 'pink',
             'tree': 'lightgray',
             'blob': 'khaki'
@@ -114,11 +114,13 @@ class GraphGUI(tk.Tk):
         self._update_mru_menu(file_menu)
         menubar.add_cascade(label='File', menu=file_menu)
         view_menu = tk.Menu(menubar, tearoff=0)
+        view_menu.add_command(label='Reset filter', command=self._menu_view_reset)
+        view_menu.add_command(label='Refresh from Repo', command=self._menu_view_refresh)
+        view_menu.add_separator()    
         view_menu.add_checkbutton(label='Show containers', 
                                   onvalue=True, offvalue=False,
                                   variable=self._show_trees,
                                   command=self._toggle_show_trees)
-        view_menu.add_command(label='Reset filter', command=self._menu_view_reset)
         menubar.add_cascade(label='View', menu=view_menu)
         model_menu = tk.Menu(menubar, tearoff=0)
         model_menu.add_command(label='Model', command=self._menu_print_model)
@@ -227,7 +229,7 @@ class GraphGUI(tk.Tk):
         lbl = label or f"v{self.model._next_vid}"
         text_width, text_height = self._measure_label(lbl)
         paddingx = 14
-        paddingy = 16
+        paddingy = 10 if vtype  == 'branch' else 16
         r=24 # minimal half-width
         rx = max(r, int(text_width / 2) + paddingx)
         ry = text_height // 2 + paddingy/2
@@ -243,11 +245,18 @@ class GraphGUI(tk.Tk):
                 pass
             return None
         # draw a rectangle vertex (rx, ry are half-width/half-height)
-        # special-case 'branch' vertices: transparent fill and no outline       
-        rect = self._create_round_rectangle(x - rx, y - ry, x + rx, y + ry,
+        # special-case 'branch' vertices: transparent fill and no outline
+        if used_type == 'branch':
+            rect = self.canvas.create_rectangle(x - rx, y - ry, x + rx, y + ry,
+                                          fill=self.vertex_colors.get(used_type, 'lightblue'),
+                                          outline='',
+                                          width=0,
+                                          tags = [lbl, used_type , self.VERTEX])
+        else:    
+            rect = self._create_round_rectangle(x - rx, y - ry, x + rx, y + ry,
                             fill=self.vertex_colors.get(used_type, 'lightblue'), 
-                            outline='' if used_type == 'branch' else 'black', 
-                            width=0 if used_type == 'branch' else 2, 
+                            outline='black', 
+                            width=2, 
                             tags = [lbl, used_type , self.VERTEX])
         text = self.canvas.create_text(x, y, text=lbl, justify = tk.CENTER, tags= [lbl , used_type, self.VERTEXLABEL])
         return labelid
@@ -574,7 +583,7 @@ class GraphGUI(tk.Tk):
             self.model.save_to_file(self._current_file)
         except Exception as e:
             try:
-                messagebox.showerror("Save diagram", f"Error saving diagram to '{filepath}': {e}", parent=self)
+                messagebox.showerror("Save diagram", f"Error saving diagram to '{self._current_file}': {e}", parent=self)
             except Exception:
                 pass
 
@@ -659,6 +668,10 @@ class GraphGUI(tk.Tk):
         self.model.apply_filter()
         self._render_model()
         self.update_status_bar()
+
+    def _menu_view_refresh(self):
+        self.model.reload_branches()
+        self.on_new_model()
 
     def _menu_print_model(self):
         """Print the current model to the console for debugging."""
