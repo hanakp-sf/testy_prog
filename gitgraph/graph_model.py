@@ -66,17 +66,17 @@ class GraphModel:
             return False
         if src_label not in self.vertices or dst_label not in self.vertices:
             return False
-        # check if edge already exists (same direction)
-        if any(e['src'] == src_label and e['dst'] == dst_label for e in self.edges):
-            return False
-        self.edges.append({'src': src_label, 'dst': dst_label, 'oriented': edge_type, 'label': label, 'path':None})
-        current_edge = self.edges[-1]
+        # check if edge already exists
+        existing_edges = [e for e in self.edges if e['src'] == src_label and e['dst'] == dst_label]
+        if len(existing_edges) == 0:
+            self.edges.append({'src': src_label, 'dst': dst_label, 'oriented': edge_type, 'label': label, 'path':None})
+        current_edge = self.edges[-1] if len(existing_edges) == 0 else existing_edges[0]
         path = self.get_path(dst_label)
         current_edge['path'] = '/' + '/'.join(path[1:]) if len(path) > 0 else None
         # hide destination vertex if not on filter path
         if len(self._filter) > 0 and current_edge['path'] is not None:
             self.vertices[dst_label]['visible'] = self.get_filter_as_string().startswith(current_edge['path'])
-        return True
+        return len(existing_edges) == 0
 
     def load_branches(self, repo_dir, x0=100, y=60, spacing=150):
         """Load branch names from a local git repository and add them as vertices.

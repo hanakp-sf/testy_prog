@@ -45,7 +45,7 @@ class GraphGUI(tk.Tk):
         self._settings = UserSettings()
         self._settings.load()
         self._show_trees = tk.BooleanVar(value=self._settings.get_show_tree())
-        self._current_file = '<Untitled>'
+        self._current_file = None
 
         # GUI mappings            
         self._drag_data = {'vertex': None, 'x': 0, 'y': 0}
@@ -153,20 +153,20 @@ class GraphGUI(tk.Tk):
                     command=lambda fp=filepath: self.open_file(fp)
                 )
 
-    def update_status_bar(self, message = None):
+    def update_status_bar(self, message = None, color = 'black'):
         if message is None:
             if len(self.model._filter) > 0:
-                self.status.config(text = 'Filter path: ' + self.model.get_filter_as_string())
+                self.status.config(text = 'Filter path: ' + self.model.get_filter_as_string(), fg = 'red')
             else:
-                self.status.config(text = self.DEFAULT_MESSAGE)
+                self.status.config(text = self.DEFAULT_MESSAGE, fg = color)
         else:
-            self.status.config(text = message)
+            self.status.config(text = message, fg = color)
 
     def update_title(self):
         new_title = '<untitled>'
 
         if self.model.repo_dir:
-            new_title = self.model.repo_dir + ' (' + self._current_file + ')'
+            new_title = self.model.repo_dir + ' (' + ('<untitled>' if self._current_file is None else self._current_file) + ')'
         self.title("Git graph for " + new_title)
 
     # ------------------ Vertex helpers ------------------
@@ -579,13 +579,16 @@ class GraphGUI(tk.Tk):
 
     def _menu_save_file(self):
         """Save the current graph model to the file."""
-        try:
-            self.model.save_to_file(self._current_file)
-        except Exception as e:
+        if self._current_file is None:
+            self._menu_saveas_file()
+        else:
             try:
-                messagebox.showerror("Save diagram", f"Error saving diagram to '{self._current_file}': {e}", parent=self)
-            except Exception:
-                pass
+                self.model.save_to_file(self._current_file)
+            except Exception as e:
+                try:
+                    messagebox.showerror("Save diagram", f"Error saving diagram to '{self._current_file}': {e}", parent=self)
+                except Exception:
+                    pass
 
     def _menu_saveas_file(self):
         """Save the current graph model to a file."""
