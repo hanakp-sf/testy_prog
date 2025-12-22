@@ -45,6 +45,11 @@ class UserSettings:
         if len(self.mru) > self.max_items:
             self.mru = self.mru[:self.max_items]
 
+    def remove_file(self, filepath):
+        # Remove if in list
+        if filepath in self.mru:
+            self.mru.remove(filepath)
+
     def get_mru_list(self):
         return self.mru
 

@@ -15,6 +15,7 @@ class GraphGUI(tk.Tk):
         # colors per vertex type
         self.vertex_colors = {
             'branch': "#2EF82E",
+            'tag': "#4622FA",
             'commit': 'pink',
             'tree': 'lightgray',
             'blob': 'khaki'
@@ -93,6 +94,7 @@ class GraphGUI(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.on_exit)
 
     def _build_menus(self):
+        #context menus
         commit_ctx_menu = tk.Menu(self, tearoff=0)
         commit_ctx_menu.add_command(label='Show related', command=self._context_load_commit_connected)
         tree_ctx_menu = tk.Menu(self, tearoff=0)
@@ -100,7 +102,7 @@ class GraphGUI(tk.Tk):
         tree_ctx_menu.add_command(label='Hide tree', command=self._context_hide_tree)
         blob_ctx_menu = tk.Menu(self, tearoff=0)
         blob_ctx_menu.add_command(label='Show this path only', command=self._context_show_specific_path)
-        # Menu bar with Vertex submenu
+        # Main menu bar 
         menubar = tk.Menu(self)
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label='Open git folder', command=self._menu_open_folder)
@@ -222,14 +224,13 @@ class GraphGUI(tk.Tk):
                   x1+r, y2, x1+r, y2, x1, y2, x1, y2-r, 
                   x1, y2-r, x1, y1+r, x1, y1+r, x1, y1)
         
-        #print (points)
         return self.canvas.create_polygon(points, **kwargs, smooth=True)  
 
     def create_vertex(self, x, y, label=None, vtype=None):
         lbl = label or f"v{self.model._next_vid}"
         text_width, text_height = self._measure_label(lbl)
         paddingx = 14
-        paddingy = 10 if vtype  == 'branch' else 16
+        paddingy = 10 if vtype in ['branch', 'tag'] else 16
         r=24 # minimal half-width
         rx = max(r, int(text_width / 2) + paddingx)
         ry = text_height // 2 + paddingy/2
@@ -246,7 +247,7 @@ class GraphGUI(tk.Tk):
             return None
         # draw a rectangle vertex (rx, ry are half-width/half-height)
         # special-case 'branch' vertices: transparent fill and no outline
-        if used_type == 'branch':
+        if used_type in ['branch', 'tag'] :
             rect = self.canvas.create_rectangle(x - rx, y - ry, x + rx, y + ry,
                                           fill=self.vertex_colors.get(used_type, 'lightblue'),
                                           outline='',
@@ -572,7 +573,7 @@ class GraphGUI(tk.Tk):
         # clear existing model and GUI
         self.model = GraphModel()
         try:
-            self.model.load_branches(folder)
+            self.model.load_refs(folder)
         except Exception:
             pass
         self.on_new_model()
@@ -673,8 +674,14 @@ class GraphGUI(tk.Tk):
         self.update_status_bar()
 
     def _menu_view_refresh(self):
-        self.model.reload_branches()
-        self.on_new_model()
+        if self.model.reload_refs():
+            self.on_new_model()
+        else:
+            try:
+                messagebox.showerror("Refresh from repo", f"Error while loading from '{self.model.repo_dir}'. Please, check the path", 
+                                     parent=self)
+            except Exception:
+                pass
 
     def _menu_print_model(self):
         """Print the current model to the console for debugging."""
@@ -730,6 +737,14 @@ class GraphGUI(tk.Tk):
             # update mru and menu
             self._settings.add_file(filepath)
             self._update_mru_menu(self.file_menu)
+        except FileNotFoundError:
+            try:
+                if messagebox.askyesno(title='File not found', 
+                                       message=f'{filepath} was not found. Do you wish to remove it from list ?'):
+                    self._settings.remove_file(filepath)
+                    self._update_mru_menu(self.file_menu)
+            except Exception:
+                pass            
         except Exception as e:
             try:
                 messagebox.showerror("Open diagram", f"Error loading diagram from '{filepath}': {e}", parent=self)
@@ -791,7 +806,7 @@ if __name__ == '__main__':
     # load only branch vertices and tip commits for fast startup
     try:
         if startup == 'GITDIR':
-            model.load_branches(param)
+            model.load_refs(param)
         if startup == 'DIAGRAMFILE':
             app.open_file(param)
     except Exception:
