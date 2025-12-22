@@ -33,3 +33,4 @@ to do:
     - delete from model if any is extra
 - DONE filter v status bar sa zobrazi cervene
 - DONE pri pokuse o ulozenie suboru ak subor neexistuje, zobrazi dialog na zadanie nazvu suboru
+- DONE pridane tags

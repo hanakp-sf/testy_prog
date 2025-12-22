@@ -9,7 +9,7 @@ import subprocess
 class GraphModel:
     """Data-only graph model: vertices and directed edges.
 
-    vertices: dict label -> {'x','y','type', 'visible'}, type in {'commit','branch','tree', 'blob'}, visible is bool
+    vertices: dict label -> {'x','y','type', 'visible'}, type in {'commit','branch','tree', 'blob', 'tag'}, visible is bool
     edges: list of {'src':src_label, 'dst':dst_label, 'oriented':True|False, 'label':str|None, 'path':str|None}
     """
 
@@ -37,7 +37,7 @@ class GraphModel:
         #already exists
         if label in self.vertices:
             return label
-        if vtype not in {'commit', 'branch', 'tree', 'blob'}:
+        if vtype not in {'commit', 'branch', 'tree', 'blob', 'tag'}:
             return False
         # add vertex keyed by label
         self.vertices[label] = {'x': x, 'y': y, 'type': vtype, 'visible': True}
@@ -78,67 +78,12 @@ class GraphModel:
             self.vertices[dst_label]['visible'] = self.get_filter_as_string().startswith(current_edge['path'])
         return len(existing_edges) == 0
 
-    def load_branches(self, repo_dir, x0=100, y=60, spacing=150):
-        """Load branch names from a local git repository and add them as vertices.
-
-        Positions are laid out horizontally starting at (x0, y).
-        Each branch is added with vertex type 'branch', and the tip commit is
-        added as a 'commit' vertex directly below, connected with an edge.
-        
-        If the repo is invalid, returns False.
-        """
-        # prefer reading refs directly from the repository's .git directory
-        if not repo_dir or not os.path.isdir(repo_dir):
-            return False
-
-        gitdir = self._resolve_git_dir(repo_dir)
-        if not gitdir:
-            return False
-
-        self.repo_dir = repo_dir
-        try:
-            refs = self._read_refs_from_gitdir(gitdir)
-        except Exception:
-            refs = {}
-
-        branches = list(refs.keys())
-        x = x0
-        self._branch_tips = getattr(self, '_branch_tips', {})
-        
-        for b in branches:
-            tip = refs.get(b)
-            # add branch vertex
-            added = self.add_vertex(x, y, b, vtype='branch')
-            if tip:
-                self._branch_tips[b] = tip
-                
-            # add tip commit vertex directly below branch (y + 40)
-            short_hash = tip[:8]
-            commit_label = f'{short_hash}'
-            if commit_label not in self.vertices:
-                # position commit below branch
-                self.add_vertex(x, y + 40, commit_label, vtype='commit')
-
-            # connect branch to tip commit (undirected edge)
-            try:
-                self.add_edge(b, commit_label, edge_type=False, label=None)
-            except Exception:
-                pass
-            self.load_commit_related(tip, x , y + 40*2)
-            x += spacing
-        # remove branches from model if they are in repo. Usefull for refresh
-        extra_branches = [item for item in self.vertices if item not in branches and self.vertices[item]['type'] == 'branch']
-        for b in extra_branches:
-            self.delete_vertex(b)            
-        return True
-
-    def reload_branches(self, x0=100, y=60, spacing=150):
-        # remove edges linked from branches to commit
-        branches = [v for v in self.vertices if self.vertices[v]['type'] == 'branch' ]
-        self.edges = [e for e in self.edges if e['src'] not in branches]
-        # load current branches     
-        self.load_branches(self.repo_dir, x0, y, spacing)
-
+    def reload_refs(self, x0=100, y=60, spacing=150):
+        # remove edges linked from branches/tags to commit
+        refs = [v for v in self.vertices if self.vertices[v]['type'] in ['branch', 'tag' ]]
+        self.edges = [e for e in self.edges if e['src'] not in refs]
+        # load current branches/tags     
+        return self.load_refs(self.repo_dir, x0, y, spacing)
 
     def _resolve_git_dir(self, repo_dir):
         """Return the path to the .git directory for a working tree.
@@ -164,14 +109,14 @@ class GraphModel:
                 return None
         return None
 
-    def _read_refs_from_gitdir(self, gitdir):
-        """Read branch refs from the gitdir (refs/heads and packed-refs).
-
-        Returns a dict mapping branch short name -> commit hash.
+    def _read_refs_from_gitdir(self, gitdir, type):
+        """Read refs from the gitdir (refs/type and packed-refs).
+        type can be heads or tags
+        Returns a dict mapping ref short name -> commit hash.
         """
         refs = {}
-        heads_dir = os.path.join(gitdir, 'refs', 'heads')
-        # walk refs/heads
+        heads_dir = os.path.join(gitdir, 'refs', type)
+        # walk refs/<type>
         if os.path.isdir(heads_dir):
             for root, _, files in os.walk(heads_dir):
                 for fn in files:
@@ -179,11 +124,11 @@ class GraphModel:
                     try:
                         with open(refpath, 'r', encoding='utf-8') as f:
                             h = f.read().strip()
-                        # branch name is path relative to heads_dir
+                        # ref name is path relative to heads_dir
                         rel = os.path.relpath(refpath, heads_dir)
-                        branch_name = rel.replace(os.sep, '/')
+                        ref_name = rel.replace(os.sep, '/')
                         if h:
-                            refs[branch_name] = h
+                            refs[ref_name] = h
                     except Exception:
                         continue
         # also read packed-refs
@@ -198,15 +143,82 @@ class GraphModel:
                         parts = line.split()
                         if len(parts) >= 2:
                             h, ref = parts[0], parts[1]
-                            if ref.startswith('refs/heads/'):
-                                branch_name = ref[len('refs/heads/'):]
+                            if ref.startswith('refs/' + type + '/'):
+                                ref_name = ref[len('refs/' + type + '/'):]
                                 # prefer refs files over packed-refs (do not override)
-                                if branch_name not in refs:
-                                    refs[branch_name] = h
+                                if ref_name not in refs:
+                                    refs[ref_name] = h
             except Exception:
                 pass
 
         return refs
+
+    def _add_refs_with_tips(self, refs_to_tips, ref_type, x0=100, y=60, spacing=150):
+        '''
+        Add refs (branches/tags) with tips to model
+        '''
+        refs = list(refs_to_tips.keys())
+        x = x0
+        
+        for b in refs:
+            tip = refs_to_tips.get(b)
+            # add branch vertex
+            added = self.add_vertex(x, y, b, vtype=ref_type)
+                
+            # add tip commit vertex directly below branch (y + 40)
+            short_hash = tip[:8]
+            commit_label = f'{short_hash}'
+            if commit_label not in self.vertices:
+                # position commit below branch
+                self.add_vertex(x, y + 40, commit_label, vtype='commit')
+
+            # connect branch to tip commit (undirected edge)
+            try:
+                self.add_edge(b, commit_label, edge_type=False, label=None)
+            except Exception:
+                pass
+            self.load_commit_related(tip, x , y + 40*2)
+            x += spacing
+        return x       
+    
+    def load_refs(self, repo_dir, x0=100, y=60, spacing=150):
+        """Load branch/tag names from a local git repository and add them as vertices.
+
+        Positions are laid out horizontally starting at (x0, y).
+        Each branch is added with vertex type 'branch', and the tip commit is
+        added as a 'commit' vertex directly below, connected with an edge.
+        
+        If the repo is invalid, returns False.
+        """
+        # prefer reading refs directly from the repository's .git directory
+        if not repo_dir or not os.path.isdir(repo_dir):
+            return False
+
+        gitdir = self._resolve_git_dir(repo_dir)
+        if not gitdir:
+            return False
+
+        self.repo_dir = repo_dir
+        #load branches
+        try:
+            branches_to_commit = self._read_refs_from_gitdir(gitdir, 'heads')
+        except Exception:
+            branches_to_commit = {}
+        x = self._add_refs_with_tips(branches_to_commit, 'branch', x0, y, spacing)
+
+        #load tags
+        try:        
+            tags_to_commit = self._read_refs_from_gitdir(gitdir, 'tags')
+        except Exception:
+            tags_to_commit = {}
+        self._add_refs_with_tips(tags_to_commit, 'tag', x, y, spacing)
+        
+        # remove branches/tags from model if they are not in repo. Usefull for refresh
+        refs = list(branches_to_commit.keys()) + list(tags_to_commit.keys())
+        extra_refs = [item for item in self.vertices if item not in refs and self.vertices[item]['type'] in ['branch', 'tag']]
+        for b in extra_refs:
+            self.delete_vertex(b)            
+        return True
 
     def load_commit_related(self, commit_hash, x=100, y=60, spacing=150):
         """Load parent commit and tree hashes for a given commit hash.
