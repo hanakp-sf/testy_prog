@@ -26,6 +26,15 @@ class GraphGUI(tk.Tk):
         self.EDGE = 'edge'
         self.EDGELABEL = 'etext'
 
+        # Map vertex types to drawing shape functions
+        self.vertex_render = {
+            'branch': self._render_rect_shape,
+            'tag': self._render_rect_shape,
+            'commit': self._render_rounded_shape,
+            'tree': self._render_rounded_shape,
+            'blob': self._render_rounded_shape          
+        }
+
         # Default status message
         self.DEFAULT_MESSAGE = (
             "Left-click+drag vertex: move vertex.\n"
@@ -213,8 +222,8 @@ class GraphGUI(tk.Tk):
         if d == ():
             return d
         return ((d[2]-d[0])/2) - 1, ((d[3]-d[1])/2) - 1  
-    
-    def _create_round_rectangle(self, x1, y1, x2, y2, **kwargs):
+
+    def _render_rounded_shape(self, label:str, vtype:str, x1:int, y1:int, x2:int, y2:int):
         # niektore body sa opakuju na vykreslenie priamych ciar namiesto spline kriviek
         # suvisi to s parametrom smooth=True
         r = 18
@@ -223,8 +232,21 @@ class GraphGUI(tk.Tk):
                   x2, y2-r, x2, y2, x2-r, y2, x2-r, y2, 
                   x1+r, y2, x1+r, y2, x1, y2, x1, y2-r, 
                   x1, y2-r, x1, y1+r, x1, y1+r, x1, y1)
+        rect = self.canvas.create_polygon(points, fill=self.vertex_colors.get(vtype, 'lightblue'), 
+                            outline='black', 
+                            width=2, 
+                            tags = [label, vtype, self.VERTEX], smooth=True)
+        text = self.canvas.create_text((x1 + x2)/2, (y1 + y2)/2, text=label, 
+                                       justify = tk.CENTER, tags= [label, vtype, self.VERTEXLABEL])
         
-        return self.canvas.create_polygon(points, **kwargs, smooth=True)  
+    def _render_rect_shape(self, label:str, vtype:str, x1:int, y1:int, x2:int, y2:int):
+        rect = self.canvas.create_rectangle(x1, y1, x2, y2,
+                                          fill=self.vertex_colors.get(vtype, 'lightblue'),
+                                          outline='',
+                                          width=0,
+                                          tags = [label, vtype , self.VERTEX])
+        text = self.canvas.create_text((x1 + x2)/2, (y1 + y2)/2, text=label, justify = tk.CENTER, 
+                                       tags= [label, vtype, self.VERTEXLABEL])        
 
     def create_vertex(self, x, y, label=None, vtype=None):
         lbl = label or f"v{self.model._next_vid}"
@@ -245,21 +267,8 @@ class GraphGUI(tk.Tk):
             except Exception:
                 pass
             return None
-        # draw a rectangle vertex (rx, ry are half-width/half-height)
-        # special-case 'branch' vertices: transparent fill and no outline
-        if used_type in ['branch', 'tag'] :
-            rect = self.canvas.create_rectangle(x - rx, y - ry, x + rx, y + ry,
-                                          fill=self.vertex_colors.get(used_type, 'lightblue'),
-                                          outline='',
-                                          width=0,
-                                          tags = [lbl, used_type , self.VERTEX])
-        else:    
-            rect = self._create_round_rectangle(x - rx, y - ry, x + rx, y + ry,
-                            fill=self.vertex_colors.get(used_type, 'lightblue'), 
-                            outline='black', 
-                            width=2, 
-                            tags = [lbl, used_type , self.VERTEX])
-        text = self.canvas.create_text(x, y, text=lbl, justify = tk.CENTER, tags= [lbl , used_type, self.VERTEXLABEL])
+        # draw a rectangle vertex (rx, ry are half-width/half-height) using dispatch dictionary
+        self.vertex_render[used_type](labelid, used_type, x - rx, y - ry, x + rx, y + ry)
         return labelid
 
     def delete_vertex(self, label, remove_from_model=True):
