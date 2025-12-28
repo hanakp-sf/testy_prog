@@ -29,7 +29,7 @@ class GraphGUI(tk.Tk):
         # Map vertex types to drawing shape functions
         self.vertex_render = {
             'branch': self._render_rect_shape,
-            'tag': self._render_rect_shape,
+            'tag': self._render_arrowed_shape,
             'commit': self._render_rounded_shape,
             'tree': self._render_rounded_shape,
             'blob': self._render_rounded_shape          
@@ -236,6 +236,20 @@ class GraphGUI(tk.Tk):
                             outline='black', 
                             width=2, 
                             tags = [label, vtype, self.VERTEX], smooth=True)
+        text = self.canvas.create_text((x1 + x2)/2, (y1 + y2)/2, text=label, 
+                                       justify = tk.CENTER, tags= [label, vtype, self.VERTEXLABEL])
+        
+    def _render_arrowed_shape(self, label:str, vtype:str, x1:int, y1:int, x2:int, y2:int):
+        xd = 6
+        yr = (y2 - y1)/2
+        points = (x1, y1, x2 - xd, y1, 
+                  x2, y1 + yr, x2 - xd, y2,
+                  x1, y2, x1 + xd, y1 + yr , x1, y1)
+        #print(f"x1={x1}, y1={y1}, x2={x2}, y2={y2}, yr={yr}")
+        rect = self.canvas.create_polygon(points, fill=self.vertex_colors.get(vtype, 'lightblue'), 
+                            outline='', 
+                            width=0, 
+                            tags = [label, vtype, self.VERTEX])
         text = self.canvas.create_text((x1 + x2)/2, (y1 + y2)/2, text=label, 
                                        justify = tk.CENTER, tags= [label, vtype, self.VERTEXLABEL])
         
@@ -474,7 +488,7 @@ class GraphGUI(tk.Tk):
             # unhighlight
             try:                    
                 self.canvas.itemconfig(self._get_vertex_rect(vlabel), 
-                                       outline='' if self.model.vertices[vlabel].get('type') == 'branch' else 'black')
+                                       outline='' if self.model.vertices[vlabel].get('type') in ['branch', 'tag'] else 'black')
             except Exception:
                 pass
         self._drag_data['vertex'] = None
