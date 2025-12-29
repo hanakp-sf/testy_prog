@@ -12,13 +12,28 @@ class GraphGUI(tk.Tk):
     def __init__(self, model=None):
         super().__init__()
 
-        # colors per vertex type
-        self.vertex_colors = {
-            'branch': "#2EF82E",
-            'tag': "#4622FA",
-            'commit': 'pink',
-            'tree': 'lightgray',
-            'blob': 'khaki'
+        # render parameters per vertex type: fill color,  outline color and outline width
+        self.vertex_render_params = {
+            'branch': {'fill': "#2EF82E",
+                       'color': '',
+                       'width': 0
+                       },
+            'tag': {'fill': "#4622FA",
+                       'color': '',
+                       'width': 0
+                       },
+            'commit': {'fill': "pink",
+                       'color': 'black',
+                       'width': 2
+                       },
+            'tree': {'fill': "lightgray",
+                       'color': 'black',
+                       'width': 1
+                       },
+            'blob': {'fill': "khaki",
+                       'color': 'black',
+                       'width': 1
+                       }
         }
         # GUI types
         self.VERTEX = 'rect'
@@ -32,7 +47,7 @@ class GraphGUI(tk.Tk):
             'tag': self._render_arrowed_shape,
             'commit': self._render_rounded_shape,
             'tree': self._render_rounded_shape,
-            'blob': self._render_rounded_shape          
+            'blob': self._render_curved_shape          
         }
 
         # Default status message
@@ -224,43 +239,68 @@ class GraphGUI(tk.Tk):
         return ((d[2]-d[0])/2) - 1, ((d[3]-d[1])/2) - 1  
 
     def _render_rounded_shape(self, label:str, vtype:str, x1:int, y1:int, x2:int, y2:int):
-        # niektore body sa opakuju na vykreslenie priamych ciar namiesto spline kriviek
-        # suvisi to s parametrom smooth=True
+        # some points are repeated to draw direct line instead of curve
+        # curves are drawn due to smooth=True
         r = 18
         points = (x1+r, y1, x2-r, y1, x2-r, y1, 
                   x2, y1, x2, y1+r, x2, y1+r, x2, y2-r, 
                   x2, y2-r, x2, y2, x2-r, y2, x2-r, y2, 
                   x1+r, y2, x1+r, y2, x1, y2, x1, y2-r, 
                   x1, y2-r, x1, y1+r, x1, y1+r, x1, y1)
-        rect = self.canvas.create_polygon(points, fill=self.vertex_colors.get(vtype, 'lightblue'), 
-                            outline='black', 
-                            width=2, 
+        rect = self.canvas.create_polygon(points, fill=self.vertex_render_params[vtype]['fill'], 
+                            outline=self.vertex_render_params[vtype]['color'], 
+                            width=self.vertex_render_params[vtype]['width'], 
                             tags = [label, vtype, self.VERTEX], smooth=True)
         text = self.canvas.create_text((x1 + x2)/2, (y1 + y2)/2, text=label, 
                                        justify = tk.CENTER, tags= [label, vtype, self.VERTEXLABEL])
         
     def _render_arrowed_shape(self, label:str, vtype:str, x1:int, y1:int, x2:int, y2:int):
+        # constants for arrow rendering
         xd = 6
         yr = (y2 - y1)/2
         points = (x1, y1, x2 - xd, y1, 
                   x2, y1 + yr, x2 - xd, y2,
                   x1, y2, x1 + xd, y1 + yr , x1, y1)
-        #print(f"x1={x1}, y1={y1}, x2={x2}, y2={y2}, yr={yr}")
-        rect = self.canvas.create_polygon(points, fill=self.vertex_colors.get(vtype, 'lightblue'), 
-                            outline='', 
-                            width=0, 
+        rect = self.canvas.create_polygon(points, fill=self.vertex_render_params[vtype]['fill'], 
+                            outline=self.vertex_render_params[vtype]['color'], 
+                            width=self.vertex_render_params[vtype]['width'], 
                             tags = [label, vtype, self.VERTEX])
         text = self.canvas.create_text((x1 + x2)/2, (y1 + y2)/2, text=label, 
                                        justify = tk.CENTER, tags= [label, vtype, self.VERTEXLABEL])
         
     def _render_rect_shape(self, label:str, vtype:str, x1:int, y1:int, x2:int, y2:int):
         rect = self.canvas.create_rectangle(x1, y1, x2, y2,
-                                          fill=self.vertex_colors.get(vtype, 'lightblue'),
-                                          outline='',
-                                          width=0,
+                                          fill=self.vertex_render_params[vtype]['fill'],
+                                          outline=self.vertex_render_params[vtype]['color'],
+                                          width=self.vertex_render_params[vtype]['width'],
                                           tags = [label, vtype , self.VERTEX])
         text = self.canvas.create_text((x1 + x2)/2, (y1 + y2)/2, text=label, justify = tk.CENTER, 
                                        tags= [label, vtype, self.VERTEXLABEL])        
+
+    def _render_curved_shape(self, label:str, vtype:str, x1:int, y1:int, x2:int, y2:int):
+        # 1/4 of width for curve rendering
+        dx = (x2-x1)/4
+        # curve constant
+        cy = 6
+        # make shape higher than standard due to curve
+        dy = 3
+        y2a = y2 + dy
+        y1a = y1 - dy
+
+        points = ( x1, y1a,
+            x2, y1a, x2, y1a,
+            x2, y2a - cy, x2, y2a - cy,
+            x2 - dx, y2a - 2*cy,
+            x1 + 2*dx, y2a - cy,
+            x1 + dx, y2a,
+            x1, y2a - cy, x1, y2a - cy, x1, y1a,  x1, y1a )
+        rect = self.canvas.create_polygon(points, fill=self.vertex_render_params[vtype]['fill'], 
+                            outline=self.vertex_render_params[vtype]['color'], 
+                            width=self.vertex_render_params[vtype]['width'], 
+                            tags = [label, vtype, self.VERTEX], smooth=True)
+        text = self.canvas.create_text((x1 + x2)/2, (y1 + y2)/2 - dy, text=label, 
+                                       justify = tk.CENTER, tags= [label, vtype, self.VERTEXLABEL])
+
 
     def create_vertex(self, x, y, label=None, vtype=None):
         lbl = label or f"v{self.model._next_vid}"
@@ -488,7 +528,7 @@ class GraphGUI(tk.Tk):
             # unhighlight
             try:                    
                 self.canvas.itemconfig(self._get_vertex_rect(vlabel), 
-                                       outline='' if self.model.vertices[vlabel].get('type') in ['branch', 'tag'] else 'black')
+                                       outline=self.vertex_render_params[self.model.vertices[vlabel].get('type')]['color'])
             except Exception:
                 pass
         self._drag_data['vertex'] = None
