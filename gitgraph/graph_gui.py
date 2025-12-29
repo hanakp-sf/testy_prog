@@ -26,11 +26,11 @@ class GraphGUI(tk.Tk):
                        'color': 'black',
                        'width': 2
                        },
-            'tree': {'fill': "lightgray",
+            'tree': {'fill': "#FFC90E",
                        'color': 'black',
                        'width': 1
                        },
-            'blob': {'fill': "khaki",
+            'blob': {'fill': "lightgray",
                        'color': 'black',
                        'width': 1
                        }
@@ -46,7 +46,7 @@ class GraphGUI(tk.Tk):
             'branch': self._render_rect_shape,
             'tag': self._render_arrowed_shape,
             'commit': self._render_rounded_shape,
-            'tree': self._render_rounded_shape,
+            'tree': self._render_handled_shape,
             'blob': self._render_curved_shape          
         }
 
@@ -301,11 +301,36 @@ class GraphGUI(tk.Tk):
         text = self.canvas.create_text((x1 + x2)/2, (y1 + y2)/2 - dy, text=label, 
                                        justify = tk.CENTER, tags= [label, vtype, self.VERTEXLABEL])
 
+    def _render_handled_shape(self, label:str, vtype:str, x1:int, y1:int, x2:int, y2:int):
+        # 1/4 of width for curve rendering
+        dx = (x2-x1)/3
+        # handle constant
+        cy = 6
+        # make shape higher than standard due to handle
+        dy = 6
+        y2a = y2 + dy
+        y1a = y1 - dy
+
+        points = ( x1 + 2, y1a + cy,
+            x2, y1a + cy, x2, y1a + cy,
+            x2, y2a, x2, y2a,
+            x1, y2a, x1, y2a,
+            x1, y1a, x1, y1a,
+            x1 + dx - 6 , y1a, x1 + dx - 6 , y1a,
+            x1 + dx, y1a,
+            x1 + dx, y1a + cy, x1 + dx, y1a + cy, x1 + 2, y1a + cy,x1 + 2, y1a + cy )
+        rect = self.canvas.create_polygon(points, fill=self.vertex_render_params[vtype]['fill'], 
+                            outline=self.vertex_render_params[vtype]['color'], 
+                            width=self.vertex_render_params[vtype]['width'], 
+                            tags = [label, vtype, self.VERTEX], smooth=True)
+        text = self.canvas.create_text((x1 + x2)/2, (y2a + y1a + cy)/2 , text=label, 
+                                       justify = tk.CENTER, tags = [label, vtype, self.VERTEXLABEL])                                       
+
 
     def create_vertex(self, x, y, label=None, vtype=None):
         lbl = label or f"v{self.model._next_vid}"
         text_width, text_height = self._measure_label(lbl)
-        paddingx = 14
+        paddingx = 10
         paddingy = 10 if vtype in ['branch', 'tag'] else 16
         r=24 # minimal half-width
         rx = max(r, int(text_width / 2) + paddingx)
