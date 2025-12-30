@@ -22,7 +22,7 @@ class GraphGUI(tk.Tk):
                        'color': '',
                        'width': 0
                        },
-            'commit': {'fill': "pink",
+            'commit': {'fill': "#EB55FF",
                        'color': 'black',
                        'width': 2
                        },
@@ -35,6 +35,8 @@ class GraphGUI(tk.Tk):
                        'width': 1
                        }
         }
+        self._init_commit_color = 'pink'
+
         # GUI types
         self.VERTEX = 'rect'
         self.VERTEXLABEL = 'vtext'
@@ -71,6 +73,7 @@ class GraphGUI(tk.Tk):
         self._settings.load()
         self._show_trees = tk.BooleanVar(value=self._settings.get_show_tree())
         self._current_file = None
+        self._init_commit = None
 
         # GUI mappings            
         self._drag_data = {'vertex': None, 'x': 0, 'y': 0}
@@ -247,7 +250,7 @@ class GraphGUI(tk.Tk):
                   x2, y2-r, x2, y2, x2-r, y2, x2-r, y2, 
                   x1+r, y2, x1+r, y2, x1, y2, x1, y2-r, 
                   x1, y2-r, x1, y1+r, x1, y1+r, x1, y1)
-        rect = self.canvas.create_polygon(points, fill=self.vertex_render_params[vtype]['fill'], 
+        rect = self.canvas.create_polygon(points, fill=self._init_commit_color if (vtype == 'commit' and label == self._init_commit) else self.vertex_render_params[vtype]['fill'], 
                             outline=self.vertex_render_params[vtype]['color'], 
                             width=self.vertex_render_params[vtype]['width'], 
                             tags = [label, vtype, self.VERTEX], smooth=True)
@@ -664,6 +667,7 @@ class GraphGUI(tk.Tk):
             self.model.load_refs(folder)
         except Exception:
             pass
+        self._current_file = None
         self.on_new_model()
 
     def _menu_save_file(self):
@@ -809,6 +813,8 @@ class GraphGUI(tk.Tk):
     def on_new_model(self):
         # clear existing GUI
         self.canvas.delete("all")
+        # if init commit is available in model, it will be rendered
+        self._init_commit = self.model.init_commit
         self.update_status_bar()
         self.update_title()
         self._render_model()
@@ -874,6 +880,10 @@ class GraphGUI(tk.Tk):
         for labelid in self.model.vertices:
             if not self.model.vertices[labelid].get('visible', True):
                 self.delete_vertex(labelid, False)
+        #if init commit updated in model, render it properly
+        if self._init_commit != self.model.init_commit:
+            self.canvas.itemconfig(self._get_vertex_rect(self.model.init_commit), fill=self._init_commit_color)
+            self._init_commit = self.model.init_commit
         # Update scroll region if drawing expands bounds
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
     

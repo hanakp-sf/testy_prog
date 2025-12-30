@@ -17,6 +17,7 @@ class GraphModel:
         self.repo_dir = None  
         self.vertices = {}
         self.edges = []
+        self.init_commit = None
         self._filter = []
         self._next_vid = 1
         # keep numeric counter for fallback/default labels if needed
@@ -259,6 +260,9 @@ class GraphModel:
             except Exception:
                 pass
             xp += spacing
+        # empty list of parents means initial commit, update variable
+        if len(parents) == 0:
+            self.init_commit = commit_hash[:8]
         # add tree as vertex diagonally below commit
         if tree:
             tree_label = f'{tree[:8]}'
@@ -362,7 +366,7 @@ class GraphModel:
         """Save the graph model to a file in a simple text format.
 
         global settings are saved as:
-        GB repo_dir
+        GB repo_dir init_commit
 
         Each vertex is saved as:
         VX label x y type visible
@@ -375,7 +379,7 @@ class GraphModel:
         """
         with open(filepath, 'w', encoding='utf-8') as f:
             # global
-            f.write(f"GB {self.repo_dir if self.repo_dir else 'None'}\n")
+            f.write(f"GB {self.repo_dir if self.repo_dir else 'None'} {self.init_commit if self.init_commit else 'None'}\n")
             # filter
             f.write(f"FT {str(self._filter)}\n")
             # vertices
@@ -400,6 +404,7 @@ class GraphModel:
             self.edges.clear()
             self._filter.clear()
             self.repo_dir = None
+            self.init_commit = None
             for line in f:
                 line = line.strip()
                 if line.startswith('VX'):
@@ -430,6 +435,10 @@ class GraphModel:
                     if len(parts) == 2:
                         _, dir = parts
                         self.repo_dir = dir if dir != 'None' else None
+                    if len(parts) == 3:
+                        _, dir, icommit = parts
+                        self.repo_dir = dir if dir != 'None' else None
+                        self.init_commit = icommit if icommit != 'None' else None
                 elif line.startswith('FT'):
                     parts = line.split()
                     if len(parts) > 1:
