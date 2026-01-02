@@ -1,16 +1,18 @@
 import tkinter as tk
 from tkinter import simpledialog, messagebox, ttk, filedialog
 import tkinter.font as tkfont
-import math
-import sys
-import os
+import math, queue, threading, sys, os
 
 from graph_model import GraphModel
 from gui_settings import UserSettings
 
+threadresult = False
 class GraphGUI(tk.Tk):
     def __init__(self, model=None):
         super().__init__()
+
+        # thread sync queue
+        self._queue = queue.Queue()
 
         # render parameters per vertex type: fill color,  outline color and outline width
         self.vertex_render_params = {
@@ -65,7 +67,8 @@ class GraphGUI(tk.Tk):
         # Edge label: SRC_VID (from model), DEST_VID (from model), EDGELABEL (constant)
 
         # model injection: use provided model or create a new empty model
-        self.model = model if model else GraphModel() 
+        self.model = model if model else GraphModel()
+        self._load_model = None
 
         ## Load settings
         # whether to show tree/blob vertices and edges
@@ -653,22 +656,8 @@ class GraphGUI(tk.Tk):
             folder = filedialog.askdirectory(title="Select Git repository folder", mustexist=True)
         except Exception:
             folder = None
-        if not folder:
-            return
-        if not os.path.isdir(os.path.join(folder, '.git')):
-            try:
-                messagebox.showerror("Open folder", f"Folder '{folder}' is not a valid Git repository (missing .git).", parent=self)
-            except Exception:
-                pass
-            return
-        # clear existing model and GUI
-        self.model = GraphModel()
-        try:
-            self.model.load_refs(folder)
-        except Exception:
-            pass
-        self._current_file = None
-        self.on_new_model()
+        if folder:
+            self.open_folder(folder)
 
     def _menu_save_file(self):
         """Save the current graph model to the file."""
@@ -766,6 +755,16 @@ class GraphGUI(tk.Tk):
         self.update_status_bar()
 
     def _menu_view_refresh(self):
+        global threadresult
+
+        self.menubar.entryconfig('View', state='disabled')
+        self.update_status_bar(f'Refreshing ...', 'red')
+        threadresult = False
+        self.after(100, self.process_queue)
+        # trigger model refresh from git folder
+        loader = threading.Thread(target=self.refresh_from_folder, daemon=True)
+        loader.start()
+        '''
         if self.model.reload_refs():
             self.on_new_model()
         else:
@@ -774,6 +773,7 @@ class GraphGUI(tk.Tk):
                                      parent=self)
             except Exception:
                 pass
+        '''
 
     def _menu_print_model(self):
         """Print the current model to the console for debugging."""
@@ -845,6 +845,69 @@ class GraphGUI(tk.Tk):
             except Exception:
                 pass
 
+    def open_folder(self, gitfolder:str):
+        if not os.path.isdir(os.path.join(gitfolder, '.git')):
+            try:
+                messagebox.showerror("Open folder", f"Folder '{gitfolder}' is not a valid Git repository (missing .git).", parent=self)
+            except Exception:
+                pass
+            return
+        self.menubar.entryconfig('File', state='disabled')
+        self.update_status_bar(f'Loading {gitfolder} ...', 'red')
+        self.after(100, self.process_queue)
+        # trigger model loading from git folder
+        loader = threading.Thread(target=self.load_from_folder, args=(gitfolder,), daemon=True)
+        loader.start()
+
+    def load_from_folder(self, gitfolder:str):
+        '''
+        Background job to load model from git folder
+        '''
+        global threadresult
+
+        self._load_model = GraphModel()
+        self._load_model.load_refs(gitfolder)
+        self._queue.put("LOADEDFOLDER")
+
+    def refresh_from_folder(self):
+        '''
+        Background job to refresh model from git folder
+        '''    
+        global threadresult
+
+        res = self.model.reload_refs()
+        threadresult = res
+        self._queue.put("REFRESHEDFOLDER")
+
+    def process_queue(self):
+        """Process messages from the background thread."""
+        global threadresult
+
+        try:
+            message = self._queue.get_nowait()
+            if message == 'LOADEDFOLDER':
+                # model loaded from git folder
+                self.model = self._load_model
+                self._load_model = None
+                self._current_file = None
+                self.on_new_model()
+            elif message == 'REFRESHEDFOLDER':
+                #model refreshed
+                if threadresult:
+                    self.on_new_model()
+                else:
+                    try:
+                        messagebox.showerror("Refresh from repo",
+                                            f"Error while loading from '{self.model.repo_dir}'. Please, check the path", 
+                                            parent=self)
+                    except Exception:
+                        pass
+            self.menubar.entryconfig('File', state='normal')
+            self.menubar.entryconfig('View', state='normal')
+        except queue.Empty:
+            # Continue polling if no message in queue
+            self.after(100, self.process_queue)
+
     # ------------------ Model rendering ------------------
     def _render_model(self):
         # check if vertex exists in GUI, if not, create it
@@ -894,21 +957,19 @@ if __name__ == '__main__':
     if len(sys.argv) == 2:
         # check arguments
         param = sys.argv[1]
-        if os.path.isdir(param) and os.path.isdir(os.path.join(param, '.git')):
-            startup = 'GITDIR'
-        else:
-            startup = 'DIAGRAMFILE'
-
-    model = GraphModel()
-    app = GraphGUI(model=model)
+        startup = 'GITDIR' if os.path.isdir(param) else 'DIAGRAMFILE'
+ 
+    app = GraphGUI(model=GraphModel())
+    # render empty model
+    app.on_new_model()
+    
     # load only branch vertices and tip commits for fast startup
     try:
         if startup == 'GITDIR':
-            model.load_refs(param)
+            app.open_folder(param)
         if startup == 'DIAGRAMFILE':
             app.open_file(param)
     except Exception:
         pass
-    # render initial model
-    app.on_new_model()
     app.mainloop()
+

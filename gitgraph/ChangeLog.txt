@@ -34,8 +34,6 @@ to do:
 - DONE filter v status bar sa zobrazi cervene
 - DONE pri pokuse o ulozenie suboru ak subor neexistuje, zobrazi dialog na zadanie nazvu suboru
 - DONE pridane tags
-- show loading status
-    load from git repo
-    load from files
-    refresh from git repo
-- DONE show initial commit (different fill color)
+- DONE show loading status
+- DONE show initial commit (shown with different fill color)
+- add annotated tags correctly
