@@ -9,7 +9,7 @@ import subprocess
 class GraphModel:
     """Data-only graph model: vertices and directed edges.
 
-    vertices: dict label -> {'x','y','type', 'visible'}, type in {'commit','branch','tree', 'blob', 'tag'}, visible is bool
+    vertices: dict label -> {'x','y','type', 'visible'}, type in {'commit','branch','tree', 'blob', 'tag', 'tagobject'}, visible is bool
     edges: list of {'src':src_label, 'dst':dst_label, 'oriented':True|False, 'label':str|None, 'path':str|None}
     """
 
@@ -38,7 +38,7 @@ class GraphModel:
         #already exists
         if label in self.vertices:
             return label
-        if vtype not in {'commit', 'branch', 'tree', 'blob', 'tag'}:
+        if vtype not in {'commit', 'branch', 'tree', 'blob', 'tag', 'tagobject'}:
             return False
         # add vertex keyed by label
         self.vertices[label] = {'x': x, 'y': y, 'type': vtype, 'visible': True}
@@ -163,14 +163,14 @@ class GraphModel:
         
         for b in refs:
             tip = refs_to_tips.get(b)
-            # add branch vertex
+            # add branch/tag vertex
             added = self.add_vertex(x, y, b, vtype=ref_type)
                 
-            # add tip commit vertex directly below branch (y + 40)
+            # add tip commit vertex directly below branch/tag (y + 40)
             short_hash = tip[:8]
             commit_label = f'{short_hash}'
             if commit_label not in self.vertices:
-                # position commit below branch
+                # position commit below branch/tag
                 self.add_vertex(x, y + 40, commit_label, vtype='commit')
 
             # connect branch to tip commit (undirected edge)
@@ -233,9 +233,10 @@ class GraphModel:
         except Exception:
             return False
 
+        current_label = f'{commit_hash[:8]}'
         parents = []
         tree = None
-        #print(out)
+        commitobject = None
         for line in out.splitlines():
             line = line.strip()
             if line.startswith('parent '):
@@ -244,25 +245,40 @@ class GraphModel:
                     parents.append(parts[1])
             elif line.startswith('tree '):
                 tree = line.split()[1]
+            elif line.startswith('object '):
+                commitobject = line.split()[1]
             elif line == '':
                 break  # end of headers
    
         # add parent commits as vertices
         xp = x
         for p in parents:
-            short_hash = p[:8]
+            short_hash = f'{p[:8]}'
             parent_label = f'{short_hash}'
             if parent_label not in self.vertices:
                 self.add_vertex(xp, y + 40, parent_label, vtype='commit')
             # connect commit to parent
             try:
-                self.add_edge(parent_label, f'{commit_hash[:8]}', edge_type=True)
+                self.add_edge(parent_label, current_label, edge_type=True)
             except Exception:
                 pass
             xp += spacing
         # empty list of parents means initial commit, update variable
-        if len(parents) == 0:
-            self.init_commit = commit_hash[:8]
+        if len(parents) == 0 and commitobject == None:
+            self.init_commit = current_label
+        # if object exist, link current to it
+        if commitobject:
+            self.vertices[current_label]['type'] = 'tagobject'
+            commit_label = f'{commitobject[:8]}'
+            if commit_label not in self.vertices:
+                self.add_vertex(x + 20, y + 20, commit_label, vtype='commit')
+            else:
+                # if found make sure it's visible
+                self.vertices[commit_label]['visible'] = True
+            try:
+                self.add_edge(current_label, commit_label, label=None, edge_type=False)
+            except Exception:
+                pass
         # add tree as vertex diagonally below commit
         if tree:
             tree_label = f'{tree[:8]}'
@@ -273,7 +289,7 @@ class GraphModel:
                 self.vertices[tree_label]['visible'] = True
             # connect commit to tree
             try:
-                self.add_edge(f'{commit_hash[:8]}', tree_label, label='<ROOT>', edge_type=False)
+                self.add_edge(current_label, tree_label, label='<ROOT>', edge_type=False)
             except Exception:
                 pass
         return True

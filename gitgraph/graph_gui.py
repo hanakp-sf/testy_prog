@@ -35,6 +35,10 @@ class GraphGUI(tk.Tk):
             'blob': {'fill': "lightgray",
                        'color': 'black',
                        'width': 1
+                       },
+            'tagobject': {'fill': "lightgray",
+                       'color': 'black',
+                       'width': 1
                        }
         }
         self._init_commit_color = 'pink'
@@ -51,7 +55,8 @@ class GraphGUI(tk.Tk):
             'tag': self._render_arrowed_shape,
             'commit': self._render_rounded_shape,
             'tree': self._render_handled_shape,
-            'blob': self._render_curved_shape          
+            'blob': self._render_curved_shape,
+            'tagobject': self._render_rounded_shape  
         }
 
         # Default status message
@@ -572,6 +577,7 @@ class GraphGUI(tk.Tk):
         
         menu_map = {
             'commit': self.commit_ctx_menu,
+            'tagobject': self.commit_ctx_menu,
             'tree': self.tree_ctx_menu,
             "blob": self.blob_ctx_menu,
             'branch': None

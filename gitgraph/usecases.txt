@@ -1,0 +1,5 @@
+1. User passes git repo folder in command line
+2. User passes diagram file in command line
+3. User opens git repo folder in File menu
+4. User opens diagram file in File menu
+5. User refreshes diagram file in View menu

@@ -36,4 +36,4 @@ to do:
 - DONE pridane tags
 - DONE show loading status
 - DONE show initial commit (shown with different fill color)
-- add annotated tags correctly
+- DONE add annotated tags 
