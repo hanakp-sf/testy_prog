@@ -1,9 +1,10 @@
 import tkinter as tk
 from tkinter import simpledialog, messagebox, ttk, filedialog
+from model import GraphModel
 import tkinter.font as tkfont
 import math, queue, threading, sys, os
 
-from graph_model import GraphModel
+
 from gui_settings import UserSettings
 
 threadresult = False
@@ -12,9 +13,11 @@ class GraphGUI(tk.Tk):
         super().__init__()
 
         # thread sync queue
+        #CC
         self._queue = queue.Queue()
 
         # render parameters per vertex type: fill color,  outline color and outline width
+        #VV
         self.vertex_render_params = {
             'branch': {'fill': "#2EF82E",
                        'color': '',
@@ -41,15 +44,18 @@ class GraphGUI(tk.Tk):
                        'width': 1
                        }
         }
+        #VV
         self._init_commit_color = 'pink'
 
         # GUI types
+        #VV
         self.VERTEX = 'rect'
         self.VERTEXLABEL = 'vtext'
         self.EDGE = 'edge'
         self.EDGELABEL = 'etext'
 
         # Map vertex types to drawing shape functions
+        #VV
         self.vertex_render = {
             'branch': self._render_rect_shape,
             'tag': self._render_arrowed_shape,
@@ -60,6 +66,7 @@ class GraphGUI(tk.Tk):
         }
 
         # Default status message
+        #CC
         self.DEFAULT_MESSAGE = (
             "Left-click+drag vertex: move vertex.\n"
             "Right-click vertex: context menu."
@@ -72,25 +79,34 @@ class GraphGUI(tk.Tk):
         # Edge label: SRC_VID (from model), DEST_VID (from model), EDGELABEL (constant)
 
         # model injection: use provided model or create a new empty model
+        #CC and passed it to VV
         self.model = model if model else GraphModel()
         self._load_model = None
 
         ## Load settings
         # whether to show tree/blob vertices and edges
+        #CC
         self._settings = UserSettings()
         self._settings.load()
+        #CC and boolean mirror in VV aby lahko dostupny vo VV pre render
         self._show_trees = tk.BooleanVar(value=self._settings.get_show_tree())
+        #CC
         self._current_file = None
+        #VV
         self._init_commit = None
 
-        # GUI mappings            
+        # GUI mappings
+        #VV        
         self._drag_data = {'vertex': None, 'x': 0, 'y': 0}
+        #CC
         self._user_actions = [] # list of user actions for debugging entry = ('action', 'object_label')
 
+        #CC
         self.geometry("900x600")
         self.minsize(500, 500)
 
         # ---- Container for scrollable region ----
+        #VV
         scrollableFrame = ttk.Frame(self)
         scrollableFrame.pack(fill="both", expand=True)
 
@@ -98,11 +114,13 @@ class GraphGUI(tk.Tk):
         scrollableFrame.rowconfigure(0, weight=1)
         scrollableFrame.columnconfigure(0, weight=1)
 
+        #CC + canvas to VV
         self.canvas = tk.Canvas(scrollableFrame, bg="white")
         #self.canvas.pack(fill=tk.BOTH, expand=True)
         self.canvas.grid(row=0, column=0, sticky="nsew")
         
         # Scrollbars
+        #VV
         v_scroll = ttk.Scrollbar(scrollableFrame, orient="vertical", command=self.canvas.yview)
         h_scroll = ttk.Scrollbar(scrollableFrame, orient="horizontal", command=self.canvas.xview)
         self.canvas.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
@@ -111,23 +129,30 @@ class GraphGUI(tk.Tk):
         h_scroll.grid(row=1, column=0, columnspan=2, sticky="ew")
 
         # Update scrollregion
+        #VV
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
         # Bindings
+        #V
         self._build_bindings()
 
         # Support for context menu actions
+        #VV
         self._context_click = None
         # build menubar and context menu
+        #context menus to V, the rest to C
         self.menubar, self.file_menu, self.commit_ctx_menu, self.tree_ctx_menu, self.blob_ctx_menu = self._build_menus()
         self.config(menu=self.menubar)
 
+        #CC
         self.status = tk.Label(self, text=self.DEFAULT_MESSAGE, anchor='w', justify='left')
         self.status.pack(side="bottom", fill=tk.X)
 
         # trigger function execution on exit
+        #CC
         self.protocol("WM_DELETE_WINDOW", self.on_exit)
 
+    #context part to V, the rest stay in C
     def _build_menus(self):
         #context menus
         commit_ctx_menu = tk.Menu(self, tearoff=0)
@@ -165,6 +190,7 @@ class GraphGUI(tk.Tk):
         menubar.add_cascade(label='Print', menu=model_menu)
         return menubar, file_menu, commit_ctx_menu, tree_ctx_menu, blob_ctx_menu
 
+    #V
     def _build_bindings(self):
         # self.bind('<Delete>', self.on_delete_key) disabled delete
         self.canvas.bind('<Button-1>', self.on_left_button_down)
@@ -172,6 +198,7 @@ class GraphGUI(tk.Tk):
         self.canvas.bind('<ButtonRelease-1>', self.on_left_button_up)
         self.canvas.bind('<Button-3>', self.on_right_button_down)
 
+    #C
     def _update_mru_menu(self, menu):
         last_idx = menu.index('Exit')
         #delete menu items, skip separator
@@ -190,6 +217,7 @@ class GraphGUI(tk.Tk):
                     command=lambda fp=filepath: self.open_file(fp)
                 )
 
+    #C
     def update_status_bar(self, message = None, color = 'black'):
         if message is None:
             if len(self.model._filter) > 0:
@@ -199,6 +227,7 @@ class GraphGUI(tk.Tk):
         else:
             self.status.config(text = message, fg = color)
 
+    #C
     def update_title(self):
         new_title = '<untitled>'
 
@@ -207,6 +236,7 @@ class GraphGUI(tk.Tk):
         self.title("Git graph for " + new_title)
 
     # ------------------ Vertex helpers ------------------
+    #V
     def _measure_label(self, label):
         try:
             font = tkfont.nametofont("TkDefaultFont")
@@ -223,32 +253,38 @@ class GraphGUI(tk.Tk):
         return w, h
 
     # --- label -> canvas_id of rectangle
+    #V
     def _get_vertex_rect(self, label):
         ids = self.canvas.find_withtag( label + ' && ' + self.VERTEX )
         return ids[0] if ids != () else None
     
     # --- label -> canvas_id of vertex label
+    #V
     def _get_vertex_text(self, label):
         ids = self.canvas.find_withtag( label + ' && ' + self.VERTEXLABEL )
         return ids[0] if ids != () else None 
     
     # --- (srclabel, dstlabel) -> canvas_id of edge
+    #V
     def _get_edge_line(self, srclabel, dstlabel):
         ids = self.canvas.find_withtag( srclabel + ' && ' + dstlabel + ' && ' + self.EDGE )
         return ids[0] if ids != () else None    
 
     # --- (srclabel, dstlabel) -> canvas_id of edge label
+    #V
     def _get_edge_text(self, srclabel, dstlabel):
         ids = self.canvas.find_withtag( srclabel + ' && ' + dstlabel + ' && ' + self.EDGELABEL )
         return ids[0] if ids != () else None 
     
     # --- label -> dimensions of vertex rectangle (rx, ry)
+    #V
     def _get_vertex_dimensions(self, label):
         d = self.canvas.bbox(self._get_vertex_rect(label))
         if d == ():
             return d
         return ((d[2]-d[0])/2) - 1, ((d[3]-d[1])/2) - 1  
 
+    #VV
     def _render_rounded_shape(self, label:str, vtype:str, x1:int, y1:int, x2:int, y2:int):
         # some points are repeated to draw direct line instead of curve
         # curves are drawn due to smooth=True
@@ -265,6 +301,7 @@ class GraphGUI(tk.Tk):
         text = self.canvas.create_text((x1 + x2)/2, (y1 + y2)/2, text=label, 
                                        justify = tk.CENTER, tags= [label, vtype, self.VERTEXLABEL])
         
+    #VV
     def _render_arrowed_shape(self, label:str, vtype:str, x1:int, y1:int, x2:int, y2:int):
         # constants for arrow rendering
         xd = 6
@@ -279,6 +316,7 @@ class GraphGUI(tk.Tk):
         text = self.canvas.create_text((x1 + x2)/2, (y1 + y2)/2, text=label, 
                                        justify = tk.CENTER, tags= [label, vtype, self.VERTEXLABEL])
         
+    #VV
     def _render_rect_shape(self, label:str, vtype:str, x1:int, y1:int, x2:int, y2:int):
         rect = self.canvas.create_rectangle(x1, y1, x2, y2,
                                           fill=self.vertex_render_params[vtype]['fill'],
@@ -288,6 +326,7 @@ class GraphGUI(tk.Tk):
         text = self.canvas.create_text((x1 + x2)/2, (y1 + y2)/2, text=label, justify = tk.CENTER, 
                                        tags= [label, vtype, self.VERTEXLABEL])        
 
+    #VV
     def _render_curved_shape(self, label:str, vtype:str, x1:int, y1:int, x2:int, y2:int):
         # 1/4 of width for curve rendering
         dx = (x2-x1)/4
@@ -312,6 +351,7 @@ class GraphGUI(tk.Tk):
         text = self.canvas.create_text((x1 + x2)/2, (y1 + y2)/2 - dy, text=label, 
                                        justify = tk.CENTER, tags= [label, vtype, self.VERTEXLABEL])
 
+    #VV
     def _render_handled_shape(self, label:str, vtype:str, x1:int, y1:int, x2:int, y2:int):
         # 1/4 of width for curve rendering
         dx = (x2-x1)/3
@@ -338,6 +378,7 @@ class GraphGUI(tk.Tk):
                                        justify = tk.CENTER, tags = [label, vtype, self.VERTEXLABEL])                                       
 
 
+    #V
     def create_vertex(self, x, y, label=None, vtype=None):
         lbl = label or f"v{self.model._next_vid}"
         text_width, text_height = self._measure_label(lbl)
@@ -361,6 +402,7 @@ class GraphGUI(tk.Tk):
         self.vertex_render[used_type](labelid, used_type, x - rx, y - ry, x + rx, y + ry)
         return labelid
 
+    #V
     def delete_vertex(self, label, remove_from_model=True):
         # remove canvas items
         try:
@@ -384,6 +426,7 @@ class GraphGUI(tk.Tk):
         if remove_from_model:
             self.model.delete_vertex(label)
 
+    #V
     def find_vertex_at(self, x, y):
         items = self.canvas.find_overlapping(x, y, x, y)
         for item in reversed(items):
@@ -394,11 +437,13 @@ class GraphGUI(tk.Tk):
         return None
 
     # ------------------ Edge helpers ------------------
+    #V
     def create_edge(self, srclabel, dstlabel, edge_type=True, label=None):
         if not self.model.add_edge(srclabel, dstlabel, edge_type=edge_type, label=label):
             return
         self._create_edge_line(srclabel, dstlabel, edge_type, label)
 
+    #V
     def _rect_line_endpoints(self, x1, y1, rx1, ry1, x2, y2, rx2, ry2):
         """Compute line endpoints where the line between centers meets the rectangle borders.
 
@@ -442,6 +487,7 @@ class GraphGUI(tk.Tk):
         ex, ey = intersect_rect(x2, y2, rx2, ry2, -dx, -dy)
         return sx, sy, ex, ey
 
+    #V
     def _calculate_label_position(self, x1, y1, x2, y2, offset=15):
         """Calculate label position perpendicular to edge line.
         
@@ -473,6 +519,7 @@ class GraphGUI(tk.Tk):
         
         return label_x, label_y
 
+    #V
     def update_edges_for_vertex(self, label):
         """Update all edges connected to the given vertex ID."""
         # find edges via canvas tags and update them
@@ -491,6 +538,7 @@ class GraphGUI(tk.Tk):
                 label_x, label_y = self._calculate_label_position(x1o, y1o, x2o, y2o)
                 self.canvas.coords(label_id, label_x, label_y)
 
+    #V
     def _create_edge_line(self, srclabel, dstlabel, edge_type=True, label=None):
         s = self.model.vertices[srclabel]
         d = self.model.vertices[dstlabel]
@@ -516,6 +564,7 @@ class GraphGUI(tk.Tk):
             self.canvas.tag_raise(label_id, line)  # put text in front of line for visibility
 
     # ------------------ Event handlers ------------------
+    #V
     def on_left_button_down(self, event):
         x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
         labelid = self.find_vertex_at(x, y)
@@ -533,6 +582,7 @@ class GraphGUI(tk.Tk):
             except Exception:
                 pass
 
+    #V
     def on_left_button_drag(self, event):
         vlabel = self._drag_data.get('vertex')
         x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
@@ -558,6 +608,7 @@ class GraphGUI(tk.Tk):
         self._drag_data['y'] = y
         self.update_edges_for_vertex(vlabel)
 
+    #V
     def on_left_button_up(self, event):
         vlabel = self._drag_data.get('vertex')
         if vlabel:
@@ -571,6 +622,7 @@ class GraphGUI(tk.Tk):
         # Update scroll region if drawing expands bounds
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
+    #V
     def on_right_button_down(self, event):
         x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
         vlabel = self.find_vertex_at(x, y)
@@ -594,6 +646,7 @@ class GraphGUI(tk.Tk):
                 except Exception:
                     pass
 
+    #V
     def _context_add_vertex(self):
         """Create a vertex at the last right-click context position.
 
@@ -611,6 +664,7 @@ class GraphGUI(tk.Tk):
         self.create_vertex(x, y, label=lbl)
         self._context_click = None
 
+    #V
     def _context_load_commit_connected(self):        
         if not self._context_click:
             return
@@ -622,6 +676,7 @@ class GraphGUI(tk.Tk):
             self._render_model()
         self._context_click = None
 
+    #V
     def _context_show_commit_tree(self):
         if not self._context_click:
             return
@@ -633,6 +688,7 @@ class GraphGUI(tk.Tk):
             self._render_model()
         self._context_click = None
 
+    #V
     def _context_show_specific_path(self):
         if not self._context_click:
             return
@@ -644,6 +700,7 @@ class GraphGUI(tk.Tk):
         self._render_model()
         self._context_click = None
 
+    #V
     def _context_hide_tree(self):
         if not self._context_click:
             return
@@ -655,6 +712,7 @@ class GraphGUI(tk.Tk):
             self._render_model()
         self._context_click = None
 
+    #C
     def _menu_open_folder(self):
         """Open a git repository folder and load its branches."""
         try:
@@ -665,6 +723,7 @@ class GraphGUI(tk.Tk):
         if folder:
             self.open_folder(folder)
 
+    #C
     def _menu_save_file(self):
         """Save the current graph model to the file."""
         if self._current_file is None:
@@ -678,6 +737,7 @@ class GraphGUI(tk.Tk):
                 except Exception:
                     pass
 
+    #C
     def _menu_saveas_file(self):
         """Save the current graph model to a file."""
         try:
@@ -700,6 +760,7 @@ class GraphGUI(tk.Tk):
             except Exception:
                 pass
 
+    #C
     def _menu_open_file(self):
         """Open a graph diagram file and load the model."""
         try:
@@ -711,10 +772,12 @@ class GraphGUI(tk.Tk):
             return
         self.open_file(filepath)
 
+    #C
     def _menu_exit_app(self):
         self._settings.save()
         self.quit()
 
+    #to remove
     def _menu_add_vertex(self):
         """Add a vertex using current pointer location (or canvas center).
 
@@ -748,18 +811,21 @@ class GraphGUI(tk.Tk):
             lbl = None
         self.create_vertex(x, y, label=lbl)
 
+    #C
     def _toggle_show_trees(self):
         #variable is toggled, just render
         self._settings.set_show_tree(self._show_trees.get())
         self._user_actions.append( ('toggle_show_trees', '->' + str(self._show_trees.get())) )
         self._render_model()
 
+    #C
     def _menu_view_reset(self):
         self.model.reset_filter()
         self.model.apply_filter()
         self._render_model()
         self.update_status_bar()
 
+    #C
     def _menu_view_refresh(self):
         global threadresult
 
@@ -770,17 +836,8 @@ class GraphGUI(tk.Tk):
         # trigger model refresh from git folder
         loader = threading.Thread(target=self.refresh_from_folder, daemon=True)
         loader.start()
-        '''
-        if self.model.reload_refs():
-            self.on_new_model()
-        else:
-            try:
-                messagebox.showerror("Refresh from repo", f"Error while loading from '{self.model.repo_dir}'. Please, check the path", 
-                                     parent=self)
-            except Exception:
-                pass
-        '''
 
+    #C
     def _menu_print_model(self):
         """Print the current model to the console for debugging."""
         try:
@@ -793,6 +850,7 @@ class GraphGUI(tk.Tk):
         except Exception as e:
             print(f"Error printing model: {e}")
 
+    #C
     def _menu_print_actions(self):
         """Print the list of user actions to the console for debugging."""
         try:
@@ -802,6 +860,7 @@ class GraphGUI(tk.Tk):
         except Exception as e:
             print(f"Error printing actions: {e}")
 
+    #V
     def on_delete_key(self, event):
         # delete currently highlighted vertex (red outline)
         to_delete = None
@@ -816,6 +875,7 @@ class GraphGUI(tk.Tk):
         if to_delete:
             self.delete_vertex(to_delete)
     
+    # C + V split
     def on_new_model(self):
         # clear existing GUI
         self.canvas.delete("all")
@@ -825,10 +885,12 @@ class GraphGUI(tk.Tk):
         self.update_title()
         self._render_model()
 
+    #CC
     def on_exit(self):
         self._settings.save()
         self.destroy()
 
+    #C
     def open_file(self, filepath):
         try:
             self.model.load_from_file(filepath)
@@ -851,6 +913,7 @@ class GraphGUI(tk.Tk):
             except Exception:
                 pass
 
+    #C
     def open_folder(self, gitfolder:str):
         if not os.path.isdir(os.path.join(gitfolder, '.git')):
             try:
@@ -865,6 +928,7 @@ class GraphGUI(tk.Tk):
         loader = threading.Thread(target=self.load_from_folder, args=(gitfolder,), daemon=True)
         loader.start()
 
+    #C
     def load_from_folder(self, gitfolder:str):
         '''
         Background job to load model from git folder
@@ -875,6 +939,7 @@ class GraphGUI(tk.Tk):
         self._load_model.load_refs(gitfolder)
         self._queue.put("LOADEDFOLDER")
 
+    #C
     def refresh_from_folder(self):
         '''
         Background job to refresh model from git folder
@@ -885,6 +950,7 @@ class GraphGUI(tk.Tk):
         threadresult = res
         self._queue.put("REFRESHEDFOLDER")
 
+    #C
     def process_queue(self):
         """Process messages from the background thread."""
         global threadresult
@@ -915,6 +981,7 @@ class GraphGUI(tk.Tk):
             self.after(100, self.process_queue)
 
     # ------------------ Model rendering ------------------
+    #V
     def _render_model(self):
         # check if vertex exists in GUI, if not, create it
         for labelid in self.model.vertices:
