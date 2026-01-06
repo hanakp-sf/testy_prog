@@ -37,5 +37,6 @@ to do:
 - DONE show loading status
 - DONE show initial commit (shown with different fill color)
 - DONE add annotated tags
+- DONE refactor to MVC
 - add legend window
-    - WIP refactor to MVP
+    
