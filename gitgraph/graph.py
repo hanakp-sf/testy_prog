@@ -4,6 +4,7 @@ import sys, os, queue, threading
 
 from gui_settings import UserSettings
 from model import GraphModel
+import symboldialog
 import view
 
 threadresult = False
@@ -79,6 +80,9 @@ class GraphApp(tk.Tk):
         model_menu.add_command(label='Model', command=self._menu_print_model)
         model_menu.add_command(label='Actions', command=self._menu_print_actions)
         menubar.add_cascade(label='Print', menu=model_menu)
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label='Symbols', command=self._menu_help_symbols)
+        menubar.add_cascade(label='Help', menu=help_menu)
         return menubar, file_menu
 
     def _menu_open_folder(self):
@@ -177,6 +181,9 @@ class GraphApp(tk.Tk):
                 print(f"  {action}")
         except Exception as e:
             print(f"Error printing actions: {e}")
+
+    def _menu_help_symbols(self):
+        symboldialog.SymbolDialog(self)
 
     def _update_mru_menu(self, menu):
         last_idx = menu.index('Exit')

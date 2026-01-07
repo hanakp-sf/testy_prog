@@ -361,8 +361,7 @@ class GraphView():
         x, y = self._context_click
         vlabel = self.find_vertex_at(x, y)
         if vlabel is not None:
-            #self._user_actions.append( ('hide_tree', vlabel) )
-            print('action should be appended')
+            self.controller.add_user_action( ('hide_tree', vlabel) )
             self.model.hide_tree(vlabel)
             self.render_model()
         self._context_click = None

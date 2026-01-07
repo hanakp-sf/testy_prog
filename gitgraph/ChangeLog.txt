@@ -38,5 +38,5 @@ to do:
 - DONE show initial commit (shown with different fill color)
 - DONE add annotated tags
 - DONE refactor to MVC
-- add legend window
+- DONE add legend window
     

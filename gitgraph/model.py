@@ -58,7 +58,7 @@ class GraphModel:
             self.vertices[label]['x'] = x
             self.vertices[label]['y'] = y
 
-    def add_edge(self, src_label, dst_label, edge_type=True, label=None):
+    def add_edge(self, src_label, dst_label, with_arrow=True, label=None):
         """Add an edge between vertex labels.
 
         Returns True on success, False on failure (same endpoints, missing vertices, or duplicate).
@@ -70,7 +70,7 @@ class GraphModel:
         # check if edge already exists
         existing_edges = [e for e in self.edges if e['src'] == src_label and e['dst'] == dst_label]
         if len(existing_edges) == 0:
-            self.edges.append({'src': src_label, 'dst': dst_label, 'oriented': edge_type, 'label': label, 'path':None})
+            self.edges.append({'src': src_label, 'dst': dst_label, 'oriented': with_arrow, 'label': label, 'path':None})
         current_edge = self.edges[-1] if len(existing_edges) == 0 else existing_edges[0]
         path = self.get_path(dst_label)
         current_edge['path'] = '/' + '/'.join(path[1:]) if len(path) > 0 else None
@@ -175,13 +175,20 @@ class GraphModel:
 
             # connect branch to tip commit (undirected edge)
             try:
-                self.add_edge(b, commit_label, edge_type=False, label=None)
+                self.add_edge(b, commit_label, with_arrow=False, label=None)
             except Exception:
                 pass
             self.load_commit_related(tip, x , y + 40*2)
             x += spacing
         return x       
-    
+
+    def clean_model(self):
+        self.vertices.clear()
+        self.edges.clear()
+        self._filter.clear()
+        self.repo_dir = None
+        self.init_commit = None        
+
     def load_refs(self, repo_dir, x0=100, y=60, spacing=150):
         """Load branch/tag names from a local git repository and add them as vertices.
 
@@ -259,7 +266,7 @@ class GraphModel:
                 self.add_vertex(xp, y + 40, parent_label, vtype='commit')
             # connect commit to parent
             try:
-                self.add_edge(parent_label, current_label, edge_type=True)
+                self.add_edge(parent_label, current_label, with_arrow=True)
             except Exception:
                 pass
             xp += spacing
@@ -276,7 +283,7 @@ class GraphModel:
                 # if found make sure it's visible
                 self.vertices[commit_label]['visible'] = True
             try:
-                self.add_edge(current_label, commit_label, label=None, edge_type=False)
+                self.add_edge(current_label, commit_label, with_arrow=False, label=None)
             except Exception:
                 pass
         # add tree as vertex diagonally below commit
@@ -289,7 +296,7 @@ class GraphModel:
                 self.vertices[tree_label]['visible'] = True
             # connect commit to tree
             try:
-                self.add_edge(current_label, tree_label, label='<ROOT>', edge_type=False)
+                self.add_edge(current_label, tree_label, with_arrow=False, label='<ROOT>')
             except Exception:
                 pass
         return True
@@ -326,7 +333,7 @@ class GraphModel:
                     self.vertices[obj_label]['visible'] = True
                 # connect tree to object
                 try:
-                    self.add_edge(f'{tree_hash[:8]}', obj_label, label=name, edge_type=False)
+                    self.add_edge(f'{tree_hash[:8]}', obj_label, with_arrow=False, label=name)
                 except Exception:
                     pass
                 xt += spacing
@@ -416,11 +423,7 @@ class GraphModel:
         Exceptions raised are propagated to the caller.
         """
         with open(filepath, 'r', encoding='utf-8') as f:
-            self.vertices.clear()
-            self.edges.clear()
-            self._filter.clear()
-            self.repo_dir = None
-            self.init_commit = None
+            self.clean_model()
             for line in f:
                 line = line.strip()
                 if line.startswith('VX'):
@@ -464,3 +467,28 @@ class GraphModel:
         for e in self.edges:
             path = self.get_path(e['dst'])
             e['path'] = '/' + '/'.join(path[1:]) if len(path) > 0 else None
+
+    def create_symbols_sample(self):
+        self.clean_model()
+        self.add_vertex(59, 35, 'BRANCH', 'branch')
+        self.add_vertex(235, 76, 'COMMIT_TAG_HEAD', 'commit')
+        self.add_vertex(199, 205, 'ROOT_FOLDER', 'tree')
+        self.add_vertex(129, 303, 'SUBFOLDER', 'tree')
+        self.add_vertex(257, 352, 'FILE2', 'blob')
+        self.add_vertex(72, 160, 'INIT_COMMIT', 'commit')
+        self.add_vertex(61, 203, 'COMMIT', 'commit')
+        self.add_vertex(67, 76, 'SIMPLE_TAG', 'tag')
+        self.add_vertex(231, 35, 'COMMIT_BRANCH_HEAD', 'commit')
+        self.add_vertex(327, 247, 'FILE1', 'blob')
+        self.add_vertex(89, 118, 'ANNONTATED_TAG', 'tag')
+        self.add_vertex(242, 118, 'TAG_OBJECT', 'tagobject')
+        self.init_commit = 'INIT_COMMIT'
+        self.add_edge( 'ANNONTATED_TAG', 'TAG_OBJECT', False)
+        self.add_edge( 'SIMPLE_TAG', 'COMMIT_TAG_HEAD', False)
+        self.add_edge( 'SIMPLE_TAG', 'COMMIT_TAG_HEAD', False)
+        self.add_edge( 'BRANCH', 'COMMIT_BRANCH_HEAD', False)
+        self.add_edge( 'COMMIT', 'ROOT_FOLDER', False, '<ROOT>')
+        self.add_edge( 'ROOT_FOLDER', 'FILE1', False, 'filename1')
+        self.add_edge( 'ROOT_FOLDER', 'SUBFOLDER', False, 'foldername1')
+        self.add_edge( 'SUBFOLDER', 'FILE2', False, 'filename2')
+
