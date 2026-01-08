@@ -34,3 +34,9 @@ to do:
 - DONE filter v status bar sa zobrazi cervene
 - DONE pri pokuse o ulozenie suboru ak subor neexistuje, zobrazi dialog na zadanie nazvu suboru
 - DONE pridane tags
+- DONE show loading status
+- DONE show initial commit (shown with different fill color)
+- DONE add annotated tags
+- DONE refactor to MVC
+- DONE add legend window
+    
