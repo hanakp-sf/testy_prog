@@ -7,7 +7,7 @@ class SymbolDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Symbols")
-        self.geometry("450x450")
+        self.geometry("450x455")
         self.resizable(False, False)
 
         self.model = GraphModel()

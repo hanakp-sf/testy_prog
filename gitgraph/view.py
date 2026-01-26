@@ -12,7 +12,7 @@ class GraphView():
                        'color': '',
                        'width': 0
                        },
-            'tag': {'fill': "#4622FA",
+            'tag': {'fill': "#17A7FF",
                        'color': '',
                        'width': 0
                        },
@@ -20,7 +20,7 @@ class GraphView():
                        'color': 'black',
                        'width': 2
                        },
-            'tree': {'fill': "#FFC90E",
+            'tree': {'fill': "#FFC343",
                        'color': 'black',
                        'width': 1
                        },
@@ -31,6 +31,10 @@ class GraphView():
             'tagobject': {'fill': "lightgray",
                        'color': 'black',
                        'width': 1
+                       },
+            'rbranch': {'fill': "#FFFD55",
+                       'color': '',
+                       'width': 0
                        }
         }
         
@@ -51,6 +55,7 @@ class GraphView():
         # Map vertex types to drawing shape functions
         self.vertex_render = {
             'branch': self._render_rect_shape,
+            'rbranch': self._render_rect_shape,
             'tag': self._render_arrowed_shape,
             'commit': self._render_rounded_shape,
             'tree': self._render_handled_shape,
@@ -379,7 +384,7 @@ class GraphView():
         lbl = label or f"v{self.model._next_vid}"
         text_width, text_height = self._measure_label(lbl)
         paddingx = 10
-        paddingy = 10 if vtype in ['branch', 'tag'] else 16
+        paddingy = 10 if vtype in ['branch', 'tag', 'rbranch'] else 16
         r=24 # minimal half-width
         rx = max(r, int(text_width / 2) + paddingx)
         ry = text_height // 2 + paddingy/2

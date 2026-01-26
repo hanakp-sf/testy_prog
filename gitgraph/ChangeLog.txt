@@ -40,3 +40,7 @@ to do:
 - DONE refactor to MVC
 - DONE add legend window
     
+- DONE add remote branches
+- add setting menu
+    - submenu load remote branches
+    - submennu load tags (check box, if true )

@@ -166,7 +166,7 @@ class GraphApp(tk.Tk):
         try:
             print("Vertices:")
             for vlabel, v in self.model.vertices.items():
-                print(f"  {vlabel}: type='{v.get('type')}', pos=({v.get('x')},{v.get('y')}, visible={v.get('visible')})")
+                print(f"  {vlabel}: type='{v.get('type')}', pos=({v.get('x')},{v.get('y')}), visible={v.get('visible')}")
             print("Edges:")
             for e in self.model.edges:
                 print(f"  {e}")

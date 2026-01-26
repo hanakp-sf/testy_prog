@@ -16,6 +16,7 @@ class GraphModel:
     def __init__(self):
         self.repo_dir = None  
         self.vertices = {}
+        self.vertex_types = {'commit', 'branch', 'rbranch', 'tree', 'blob', 'tag', 'tagobject'}
         self.edges = []
         self.init_commit = None
         self._filter = []
@@ -28,7 +29,7 @@ class GraphModel:
         Requirements:
         - `label` must be a non-empty string.
         - labels are unique; if `label` already exists the method returns False.
-        - type must be one of {'commit','branch','tree','blob'}.
+        - type must be one of {'commit','branch','tree','blob', 'rbranch'}.
 
         On success returns the label (string). On failure returns False.
         """
@@ -38,7 +39,7 @@ class GraphModel:
         #already exists
         if label in self.vertices:
             return label
-        if vtype not in {'commit', 'branch', 'tree', 'blob', 'tag', 'tagobject'}:
+        if vtype not in self.vertex_types:
             return False
         # add vertex keyed by label
         self.vertices[label] = {'x': x, 'y': y, 'type': vtype, 'visible': True}
@@ -81,7 +82,7 @@ class GraphModel:
 
     def reload_refs(self, x0=100, y=60, spacing=150):
         # remove edges linked from branches/tags to commit
-        refs = [v for v in self.vertices if self.vertices[v]['type'] in ['branch', 'tag' ]]
+        refs = [v for v in self.vertices if self.vertices[v]['type'] in ['branch', 'tag', 'rbranch' ]]
         self.edges = [e for e in self.edges if e['src'] not in refs]
         # load current branches/tags     
         return self.load_refs(self.repo_dir, x0, y, spacing)
@@ -110,13 +111,14 @@ class GraphModel:
                 return None
         return None
 
-    def _read_refs_from_gitdir(self, gitdir, type):
+    def _read_refs_from_gitdir(self, gitdir, type, remote_alias=''):
         """Read refs from the gitdir (refs/type and packed-refs).
-        type can be heads or tags
+        type can be heads or tags or remotes
+        if type is remotes, then remote_alias must by provided
         Returns a dict mapping ref short name -> commit hash.
         """
         refs = {}
-        heads_dir = os.path.join(gitdir, 'refs', type)
+        heads_dir = os.path.join(gitdir, 'refs', type, remote_alias)
         # walk refs/<type>
         if os.path.isdir(heads_dir):
             for root, _, files in os.walk(heads_dir):
@@ -127,8 +129,9 @@ class GraphModel:
                             h = f.read().strip()
                         # ref name is path relative to heads_dir
                         rel = os.path.relpath(refpath, heads_dir)
-                        ref_name = rel.replace(os.sep, '/')
-                        if h:
+                        ref_name = remote_alias + ('' if remote_alias == '' else '/') + rel.replace(os.sep, '/')
+                        # hash must not be a reference
+                        if h and not h.startswith('ref:'):
                             refs[ref_name] = h
                     except Exception:
                         continue
@@ -144,8 +147,8 @@ class GraphModel:
                         parts = line.split()
                         if len(parts) >= 2:
                             h, ref = parts[0], parts[1]
-                            if ref.startswith('refs/' + type + '/'):
-                                ref_name = ref[len('refs/' + type + '/'):]
+                            if ref.startswith('refs/' + type + ('' if remote_alias == '' else ('/' + remote_alias))  + '/'):
+                                ref_name = ref[len('refs/' + type +'/'):]
                                 # prefer refs files over packed-refs (do not override)
                                 if ref_name not in refs:
                                     refs[ref_name] = h
@@ -212,7 +215,17 @@ class GraphModel:
             branches_to_commit = self._read_refs_from_gitdir(gitdir, 'heads')
         except Exception:
             branches_to_commit = {}
+        #print(f'branches = {branches_to_commit}')
         x = self._add_refs_with_tips(branches_to_commit, 'branch', x0, y, spacing)
+        
+        # load remote branches if they exist
+        rems_to_commit = {}
+        remote_dir = os.path.join(gitdir,'refs','remotes')
+        if os.path.isdir(remote_dir):
+            for remote_alias in [ f.name for f in os.scandir(remote_dir) if f.is_dir() ]:
+                #enumerate all remotes and insert related branches - branch names are in form <remote_alias>/<branch_name>
+                rems_to_commit.update( self._read_refs_from_gitdir(gitdir, 'remotes', remote_alias) )
+            x = self._add_refs_with_tips(rems_to_commit, 'rbranch', x, y, spacing)
 
         #load tags
         try:        
@@ -222,8 +235,8 @@ class GraphModel:
         self._add_refs_with_tips(tags_to_commit, 'tag', x, y, spacing)
         
         # remove branches/tags from model if they are not in repo. Usefull for refresh
-        refs = list(branches_to_commit.keys()) + list(tags_to_commit.keys())
-        extra_refs = [item for item in self.vertices if item not in refs and self.vertices[item]['type'] in ['branch', 'tag']]
+        refs = list(branches_to_commit.keys()) + list(tags_to_commit.keys()) + list(rems_to_commit.keys())
+        extra_refs = [item for item in self.vertices if item not in refs and self.vertices[item]['type'] in ['branch', 'tag', 'rbranch']]
         for b in extra_refs:
             self.delete_vertex(b)            
         return True
@@ -471,22 +484,25 @@ class GraphModel:
     def create_symbols_sample(self):
         self.clean_model()
         self.add_vertex(59, 35, 'BRANCH', 'branch')
-        self.add_vertex(235, 76, 'COMMIT_TAG_HEAD', 'commit')
-        self.add_vertex(199, 205, 'ROOT_FOLDER', 'tree')
-        self.add_vertex(129, 303, 'SUBFOLDER', 'tree')
-        self.add_vertex(257, 352, 'FILE2', 'blob')
-        self.add_vertex(72, 160, 'INIT_COMMIT', 'commit')
-        self.add_vertex(61, 203, 'COMMIT', 'commit')
-        self.add_vertex(67, 76, 'SIMPLE_TAG', 'tag')
-        self.add_vertex(231, 35, 'COMMIT_BRANCH_HEAD', 'commit')
-        self.add_vertex(327, 247, 'FILE1', 'blob')
-        self.add_vertex(89, 118, 'ANNONTATED_TAG', 'tag')
-        self.add_vertex(242, 118, 'TAG_OBJECT', 'tagobject')
+        self.add_vertex(80, 76, 'REMOTE_BRANCH', 'rbranch')
+        self.add_vertex(260, 76, 'COMMIT_REMOTE_TIP', 'commit')
+        self.add_vertex(235, 117, 'COMMIT_TAG_TIP', 'commit')
+        self.add_vertex(199, 246, 'ROOT_FOLDER', 'tree')
+        self.add_vertex(129, 344, 'SUBFOLDER', 'tree')
+        self.add_vertex(257, 393, 'FILE2', 'blob')
+        self.add_vertex(72, 201, 'INIT_COMMIT', 'commit')
+        self.add_vertex(61, 244, 'COMMIT', 'commit')
+        self.add_vertex(67, 117, 'SIMPLE_TAG', 'tag')
+        self.add_vertex(231, 35, 'COMMIT_BRANCH_TIP', 'commit')
+        self.add_vertex(327, 288, 'FILE1', 'blob')
+        self.add_vertex(89, 159, 'ANNONTATED_TAG', 'tag')
+        self.add_vertex(242, 159, 'TAG_OBJECT', 'tagobject')
         self.init_commit = 'INIT_COMMIT'
         self.add_edge( 'ANNONTATED_TAG', 'TAG_OBJECT', False)
-        self.add_edge( 'SIMPLE_TAG', 'COMMIT_TAG_HEAD', False)
-        self.add_edge( 'SIMPLE_TAG', 'COMMIT_TAG_HEAD', False)
-        self.add_edge( 'BRANCH', 'COMMIT_BRANCH_HEAD', False)
+        self.add_edge( 'SIMPLE_TAG', 'COMMIT_TAG_TIP', False)
+        self.add_edge( 'SIMPLE_TAG', 'COMMIT_TAG_TIP', False)
+        self.add_edge( 'BRANCH', 'COMMIT_BRANCH_TIP', False)
+        self.add_edge( 'REMOTE_BRANCH', 'COMMIT_REMOTE_TIP', False, 'origin')
         self.add_edge( 'COMMIT', 'ROOT_FOLDER', False, '<ROOT>')
         self.add_edge( 'ROOT_FOLDER', 'FILE1', False, 'filename1')
         self.add_edge( 'ROOT_FOLDER', 'SUBFOLDER', False, 'foldername1')
