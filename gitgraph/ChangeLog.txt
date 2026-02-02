@@ -39,4 +39,10 @@ to do:
 - DONE add annotated tags
 - DONE refactor to MVC
 - DONE add legend window
-    
+- DONE add remote branches
+- DONE move print menu to View menu
+- DONE add show remote branches to view menu
+- DONE add show tags to view menu
+- DONE add setting menu
+    - submenu include remote branches (load remote branches if true )
+    - submennu include tags (load tags if true )

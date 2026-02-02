@@ -14,8 +14,11 @@ class UserSettings:
         self.file_path = os.path.join(self.file_path, "settings.json")
         self.max_items = max_items
         self._show_tree = True
-        #self.mru = self.load()
+        self._show_tag = True
+        self._show_rbranch = True
         self.mru = []
+        self._inc_tags = True
+        self._inc_rbranches = True
 
     def load(self):
         try:
@@ -23,13 +26,27 @@ class UserSettings:
                 data = json.load(f)
                 self.mru = data.get("mru", [])
                 self._show_tree = data.get("show_tree", True)
+                self._show_tag = data.get("show_tag", True)
+                self._show_rbranch = data.get("show_rbranch", True)
+                self._inc_tags = data.get("load_tag", True)
+                self._inc_rbranches = data.get("load_rbranch", True)
         except:
             self.mru = []
             self._show_tree = True
+            self._show_tag = True
+            self._show_rbranch = True
+            self._inc_tags = True
+            self._inc_rbranches = True
 
     def save(self):
         with open(self.file_path, "w") as f:
-            json.dump({"mru": self.mru, "show_tree": self._show_tree}, f, indent=4)
+            json.dump({"mru": self.mru, 
+                       "show_tree": self._show_tree, 
+                       "show_tag": self._show_tag, 
+                       "show_rbranch": self._show_rbranch,
+                       "load_tag": self._inc_tags, 
+                       "load_rbranch": self._inc_rbranches}, 
+                       f, indent=4)
 
     def add_file(self, filepath):
         filepath = os.path.abspath(filepath)
@@ -58,4 +75,27 @@ class UserSettings:
 
     def set_show_tree(self, value):
         self._show_tree = value
+
+    def get_show_tag(self):
+        return self._show_tag
+
+    def set_show_tag(self, value):
+        self._show_tag = value
+
+    def get_show_rbranch(self):
+        return self._show_rbranch
+
+    def set_show_rbranch(self, value):
+        self._show_rbranch = value
     
+    def get_load_tags(self):
+        return self._inc_tags
+
+    def set_load_tags(self, value):
+        self._inc_tags = value
+
+    def get_load_rbranches(self):
+        return self._inc_rbranches
+
+    def set_load_rbranches(self, value):
+        self._inc_rbranches = value

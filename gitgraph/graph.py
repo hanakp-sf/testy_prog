@@ -27,21 +27,22 @@ class GraphApp(tk.Tk):
         self._queue = queue.Queue()
 
         ## Load settings
-        # whether to show tree/blob vertices and edges
+        # whether to show tree/blob/tag/remote branch vertices and edges
         self._settings = UserSettings()
         self._settings.load()
-        self._show_trees = tk.BooleanVar(value=self._settings.get_show_tree())
-        self.view.show_trees = self._show_trees.get()
+        self.view.show_trees.set(self._settings.get_show_tree())
+        self.view.show_tags.set(self._settings.get_show_tag())
+        self.view.show_rbranches.set(self._settings.get_show_rbranch())
+        # whether to load tag/remote branch
+        self._load_tags = tk.BooleanVar(value=self._settings.get_load_tags())
+        self._load_rbranches = tk.BooleanVar(value=self._settings.get_load_rbranches())
 
         self._current_file = None
         # list of user actions for debugging entry = ('action', 'object_label')
         self._user_actions = [] 
 
         # Default status message
-        self.DEFAULT_MESSAGE = (
-            "Left-click+drag vertex: move vertex.\n"
-            "Right-click vertex: context menu."
-        )
+        self.DEFAULT_MESSAGE = "Left-click+drag vertex: move vertex. Right-click vertex: context menu."
 
         # build menubar and context menu
         self.menubar, self.file_menu = self._build_menus()
@@ -56,6 +57,7 @@ class GraphApp(tk.Tk):
     def _build_menus(self):
         # Main menu bar 
         menubar = tk.Menu(self)
+        # File menu
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label='Open git folder', command=self._menu_open_folder)
         file_menu.add_separator()
@@ -67,19 +69,39 @@ class GraphApp(tk.Tk):
         file_menu.add_command(label='Exit', command=self._menu_exit_app)
         self._update_mru_menu(file_menu)
         menubar.add_cascade(label='File', menu=file_menu)
+        # View menu
         view_menu = tk.Menu(menubar, tearoff=0)
         view_menu.add_command(label='Reset filter', command=self._menu_view_reset)
         view_menu.add_command(label='Refresh from Repo', command=self._menu_view_refresh)
         view_menu.add_separator()    
         view_menu.add_checkbutton(label='Show containers', 
                                   onvalue=True, offvalue=False,
-                                  variable=self._show_trees,
+                                  variable=self.view.show_trees,
                                   command=self._toggle_show_trees)
+        view_menu.add_checkbutton(label='Show tags', 
+                                  onvalue=True, offvalue=False,
+                                  variable=self.view.show_tags,
+                                  command=self._toggle_show_tags)
+        view_menu.add_checkbutton(label='Show remote branches', 
+                                  onvalue=True, offvalue=False,
+                                  variable=self.view.show_rbranches,
+                                  command=self._toggle_show_rbranches)
+        view_menu.add_separator() 
+        view_menu.add_command(label='Print model', command=self._menu_print_model)
+        view_menu.add_command(label='Print actions', command=self._menu_print_actions)
         menubar.add_cascade(label='View', menu=view_menu)
-        model_menu = tk.Menu(menubar, tearoff=0)
-        model_menu.add_command(label='Model', command=self._menu_print_model)
-        model_menu.add_command(label='Actions', command=self._menu_print_actions)
-        menubar.add_cascade(label='Print', menu=model_menu)
+        settings_menu = tk.Menu(menubar, tearoff=0)
+        settings_menu.add_checkbutton(label='Include tags',
+                                  onvalue=True, offvalue=False,
+                                  variable=self._load_tags,
+                                  command=self._toggle_load_tags
+                                  )
+        settings_menu.add_checkbutton(label='Include remote branches', 
+                                  onvalue=True, offvalue=False,
+                                  variable=self._load_rbranches,
+                                  command=self._toggle_load_rbranches
+                                  )
+        menubar.add_cascade(label='Settings', menu=settings_menu)
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label='Symbols', command=self._menu_help_symbols)
         menubar.add_cascade(label='Help', menu=help_menu)
@@ -166,7 +188,7 @@ class GraphApp(tk.Tk):
         try:
             print("Vertices:")
             for vlabel, v in self.model.vertices.items():
-                print(f"  {vlabel}: type='{v.get('type')}', pos=({v.get('x')},{v.get('y')}, visible={v.get('visible')})")
+                print(f"  {vlabel}: type='{v.get('type')}', pos=({v.get('x')},{v.get('y')}), visible={v.get('visible')}")
             print("Edges:")
             for e in self.model.edges:
                 print(f"  {e}")
@@ -204,11 +226,12 @@ class GraphApp(tk.Tk):
                 )
 
     def update_status_bar(self, message = None, color = 'black'):
-        if message is None:
+        if message is None: 
+            status = f'Tags: {'ON' if self.model._include_tags else 'OFF'} | Remote branches: {'ON' if self.model._include_rbranches else 'OFF'}'
             if len(self.model._filter) > 0:
-                self.status.config(text = 'Filter path: ' + self.model.get_filter_as_string(), fg = 'red')
+                self.status.config(text = f'{status} | Filter path: {self.model.get_filter_as_string()}',  fg = 'red')
             else:
-                self.status.config(text = self.DEFAULT_MESSAGE, fg = color)
+                self.status.config(text = f'{status} | {self.DEFAULT_MESSAGE}', fg = color)
         else:
             self.status.config(text = message, fg = color)
 
@@ -224,21 +247,40 @@ class GraphApp(tk.Tk):
 
     def _toggle_show_trees(self):
         #variable is toggled, just render
-        self._settings.set_show_tree(self._show_trees.get())
-        self.view.show_trees = self._show_trees.get()
-        self._user_actions.append( ('toggle_show_trees', '->' + str(self._show_trees.get())) )
+        newvalue = self.view.show_trees.get()
+        self._settings.set_show_tree(newvalue)
+        self._user_actions.append( ('toggle_show_trees', '->' + str(newvalue)) )
         self.view.render_model()
+
+    def _toggle_show_tags(self):
+        #variable is toggled, just render
+        newvalue = self.view.show_tags.get()
+        self._settings.set_show_tag(newvalue)
+        self._user_actions.append( ('toggle_show_tags', '->' + str(newvalue)) )
+        self.view.render_model()       
+
+    def _toggle_show_rbranches(self):
+        #variable is toggled, just render
+        newvalue = self.view.show_rbranches.get()
+        self._settings.set_show_rbranch(newvalue)
+        self._user_actions.append( ('toggle_show_rbranches', '->' + str(newvalue)) )
+        self.view.render_model() 
+
+    def _toggle_load_tags(self):
+        #variable is toggled, will be used during next load/reload
+        self._settings.set_load_tags(self._load_tags.get())
+        self._user_actions.append( ('toggle_load_tags', '->' + str(self._load_tags.get())) )
+
+    def _toggle_load_rbranches(self):
+        #variable is toggled, will be used during next load/reload
+        self._settings.set_load_rbranches(self._load_rbranches.get()) 
+        self._user_actions.append( ('toggle_load_rbranches', '->' + str(self._load_rbranches.get())) )
 
     def on_exit(self):
         self._settings.save()
         self.destroy()
 
     def on_new_model(self):
-        # clear existing GUI
-        #self.canvas.delete("all")
-        # if init commit is available in model, it will be rendered
-        #self._init_commit = self.model.init_commit
-        #self._render_model()
         self.view.on_new_model(self.model)
         self.update_status_bar()
         self.update_title()
@@ -254,7 +296,7 @@ class GraphApp(tk.Tk):
         '''    
         global threadresult
 
-        res = self.model.reload_refs()
+        res = self.model.reload_refs(include_tags=self._load_tags.get(), include_rbranches=self._load_rbranches.get())
         threadresult = res
         self._queue.put("REFRESHEDFOLDER")
 
@@ -265,7 +307,7 @@ class GraphApp(tk.Tk):
         global threadresult
 
         self._load_model = GraphModel()
-        self._load_model.load_refs(gitfolder)
+        self._load_model.load_refs(gitfolder, include_tags=self._load_tags.get(), include_rbranches=self._load_rbranches.get())
         self._queue.put("LOADEDFOLDER")
 
     def process_queue(self):

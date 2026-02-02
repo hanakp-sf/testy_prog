@@ -12,7 +12,7 @@ class GraphView():
                        'color': '',
                        'width': 0
                        },
-            'tag': {'fill': "#4622FA",
+            'tag': {'fill': "#17A7FF",
                        'color': '',
                        'width': 0
                        },
@@ -20,7 +20,7 @@ class GraphView():
                        'color': 'black',
                        'width': 2
                        },
-            'tree': {'fill': "#FFC90E",
+            'tree': {'fill': "#FFC343",
                        'color': 'black',
                        'width': 1
                        },
@@ -31,6 +31,10 @@ class GraphView():
             'tagobject': {'fill': "lightgray",
                        'color': 'black',
                        'width': 1
+                       },
+            'rbranch': {'fill': "#FFFD55",
+                       'color': '',
+                       'width': 0
                        }
         }
         
@@ -51,6 +55,7 @@ class GraphView():
         # Map vertex types to drawing shape functions
         self.vertex_render = {
             'branch': self._render_rect_shape,
+            'rbranch': self._render_rect_shape,
             'tag': self._render_arrowed_shape,
             'commit': self._render_rounded_shape,
             'tree': self._render_handled_shape,
@@ -60,7 +65,9 @@ class GraphView():
 
         self.controller = pController if pController  else GraphApp()
         self.model = pModel if pModel else GraphModel()
-        self.show_trees = True
+        self.show_trees = tk.BooleanVar(value=True)
+        self.show_tags = tk.BooleanVar(value=True)
+        self.show_rbranches = tk.BooleanVar(value=True)
         self._init_commit = None
         
         # Support for context menu actions
@@ -379,7 +386,7 @@ class GraphView():
         lbl = label or f"v{self.model._next_vid}"
         text_width, text_height = self._measure_label(lbl)
         paddingx = 10
-        paddingy = 10 if vtype in ['branch', 'tag'] else 16
+        paddingy = 10 if vtype in ['branch', 'tag', 'rbranch'] else 16
         r=24 # minimal half-width
         rx = max(r, int(text_width / 2) + paddingx)
         ry = text_height // 2 + paddingy/2
@@ -474,7 +481,7 @@ class GraphView():
             rect = self._get_vertex_rect(labelid)           
             if rect is None:
                 # skip tree/blob vertices if configured so
-                if not self.show_trees and self.model.vertices[labelid].get('type') in ['tree', 'blob']:
+                if not self.show_trees.get() and self.model.vertices[labelid].get('type') in ['tree', 'blob']:
                     continue
                 v = self.model.vertices[labelid]
                 self.create_vertex(v['x'], v['y'], label=labelid, vtype=v.get('type', 'commit'))
@@ -488,13 +495,25 @@ class GraphView():
             line_id = self._get_edge_line(s_v, d_v)
             if line_id is None:
                 # skip edges connected to tree/blob vertices if configured so
-                if not self.show_trees and (self.model.vertices[s_v].get('type') in ['tree', 'blob'] or
+                if not self.show_trees.get() and (self.model.vertices[s_v].get('type') in ['tree', 'blob'] or
                                              self.model.vertices[d_v].get('type') in ['tree', 'blob']):
                     continue
                 self._create_edge_line(s_v, d_v, edge_type, edge_label)
-        # delete tree/blob vertices and edges if configured so, but do not modify model
-        if not self.show_trees:
+        # delete tree/blob vertices and edges if set to hide, but do not modify model
+        if not self.show_trees.get():
             for widgedid in list(self.canvas.find_withtag('tree || blob')):
+                tags = self.canvas.gettags(widgedid)
+                if tags != ():
+                    self.delete_vertex(tags[0], False)
+        # delete tag vertices and edges if set to hide, but do not modify model
+        if not self.show_tags.get():
+            for widgedid in list(self.canvas.find_withtag('tag')):
+                tags = self.canvas.gettags(widgedid)
+                if tags != ():
+                    self.delete_vertex(tags[0], False)
+        # delete remote branch vertices and edges if set to hide, but do not modify model
+        if not self.show_rbranches.get():
+            for widgedid in list(self.canvas.find_withtag('rbranch')):
                 tags = self.canvas.gettags(widgedid)
                 if tags != ():
                     self.delete_vertex(tags[0], False)
