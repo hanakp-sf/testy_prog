@@ -20,6 +20,8 @@ class GraphModel:
         self.edges = []
         self.init_commit = None
         self._filter = []
+        self._include_tags = True
+        self._include_rbranches = True
         self._next_vid = 1
         # keep numeric counter for fallback/default labels if needed
 
@@ -80,12 +82,12 @@ class GraphModel:
             self.vertices[dst_label]['visible'] = self.get_filter_as_string().startswith(current_edge['path'])
         return len(existing_edges) == 0
 
-    def reload_refs(self, x0=100, y=60, spacing=150):
-        # remove edges linked from branches/tags to commit
+    def reload_refs(self, include_tags = True, include_rbranches = True,x0=100, y=60, spacing=150):
+        # remove edges linked from branches/tags/rbranches to commit
         refs = [v for v in self.vertices if self.vertices[v]['type'] in ['branch', 'tag', 'rbranch' ]]
         self.edges = [e for e in self.edges if e['src'] not in refs]
-        # load current branches/tags     
-        return self.load_refs(self.repo_dir, x0, y, spacing)
+        # load current branches/tags/rbranches     
+        return self.load_refs(self.repo_dir, include_tags, include_rbranches,  x0, y, spacing)
 
     def _resolve_git_dir(self, repo_dir):
         """Return the path to the .git directory for a working tree.
@@ -190,9 +192,11 @@ class GraphModel:
         self.edges.clear()
         self._filter.clear()
         self.repo_dir = None
-        self.init_commit = None        
+        self.init_commit = None
+        self._include_tags = True
+        self._include_rbranches = True
 
-    def load_refs(self, repo_dir, x0=100, y=60, spacing=150):
+    def load_refs(self, repo_dir, include_tags = True, include_rbranches = True, x0=100, y=60, spacing=150):
         """Load branch/tag names from a local git repository and add them as vertices.
 
         Positions are laid out horizontally starting at (x0, y).
@@ -218,21 +222,26 @@ class GraphModel:
         #print(f'branches = {branches_to_commit}')
         x = self._add_refs_with_tips(branches_to_commit, 'branch', x0, y, spacing)
         
-        # load remote branches if they exist
+        # load remote branches if they exist and are requested
+        self._include_rbranches = include_rbranches
         rems_to_commit = {}
-        remote_dir = os.path.join(gitdir,'refs','remotes')
-        if os.path.isdir(remote_dir):
-            for remote_alias in [ f.name for f in os.scandir(remote_dir) if f.is_dir() ]:
-                #enumerate all remotes and insert related branches - branch names are in form <remote_alias>/<branch_name>
-                rems_to_commit.update( self._read_refs_from_gitdir(gitdir, 'remotes', remote_alias) )
-            x = self._add_refs_with_tips(rems_to_commit, 'rbranch', x, y, spacing)
+        if self._include_rbranches:
+            remote_dir = os.path.join(gitdir,'refs','remotes')
+            if os.path.isdir(remote_dir):
+                for remote_alias in [ f.name for f in os.scandir(remote_dir) if f.is_dir() ]:
+                    #enumerate all remotes and insert related branches - branch names are in form <remote_alias>/<branch_name>
+                    rems_to_commit.update( self._read_refs_from_gitdir(gitdir, 'remotes', remote_alias) )
+                x = self._add_refs_with_tips(rems_to_commit, 'rbranch', x, y, spacing)
 
-        #load tags
-        try:        
-            tags_to_commit = self._read_refs_from_gitdir(gitdir, 'tags')
-        except Exception:
-            tags_to_commit = {}
-        self._add_refs_with_tips(tags_to_commit, 'tag', x, y, spacing)
+        #load tags if they are requested
+        tags_to_commit = {}
+        self._include_tags = include_tags
+        if self._include_tags:
+            try:        
+                tags_to_commit = self._read_refs_from_gitdir(gitdir, 'tags')
+            except Exception:
+                pass
+            self._add_refs_with_tips(tags_to_commit, 'tag', x, y, spacing)
         
         # remove branches/tags from model if they are not in repo. Usefull for refresh
         refs = list(branches_to_commit.keys()) + list(tags_to_commit.keys()) + list(rems_to_commit.keys())
@@ -402,7 +411,7 @@ class GraphModel:
         """Save the graph model to a file in a simple text format.
 
         global settings are saved as:
-        GB repo_dir init_commit
+        GB repo_dir init_commit include_tags_flag include_remote_branches_flag
 
         Each vertex is saved as:
         VX label x y type visible
@@ -415,7 +424,8 @@ class GraphModel:
         """
         with open(filepath, 'w', encoding='utf-8') as f:
             # global
-            f.write(f"GB {self.repo_dir if self.repo_dir else 'None'} {self.init_commit if self.init_commit else 'None'}\n")
+            f.write(f"GB {self.repo_dir if self.repo_dir else 'None'} {self.init_commit if self.init_commit else 'None'} " +
+                     f"{int(self._include_tags)} {int(self._include_rbranches)}\n")
             # filter
             f.write(f"FT {str(self._filter)}\n")
             # vertices
@@ -471,6 +481,12 @@ class GraphModel:
                         _, dir, icommit = parts
                         self.repo_dir = dir if dir != 'None' else None
                         self.init_commit = icommit if icommit != 'None' else None
+                    if len(parts) == 5:
+                        _, dir, icommit, it, irb = parts
+                        self.repo_dir = dir if dir != 'None' else None
+                        self.init_commit = icommit if icommit != 'None' else None
+                        self._include_tags = bool(int(it))
+                        self._include_rbranches = bool(int(irb))
                 elif line.startswith('FT'):
                     parts = line.split()
                     if len(parts) > 1:
@@ -502,7 +518,7 @@ class GraphModel:
         self.add_edge( 'SIMPLE_TAG', 'COMMIT_TAG_TIP', False)
         self.add_edge( 'SIMPLE_TAG', 'COMMIT_TAG_TIP', False)
         self.add_edge( 'BRANCH', 'COMMIT_BRANCH_TIP', False)
-        self.add_edge( 'REMOTE_BRANCH', 'COMMIT_REMOTE_TIP', False, 'origin')
+        self.add_edge( 'REMOTE_BRANCH', 'COMMIT_REMOTE_TIP', False)
         self.add_edge( 'COMMIT', 'ROOT_FOLDER', False, '<ROOT>')
         self.add_edge( 'ROOT_FOLDER', 'FILE1', False, 'filename1')
         self.add_edge( 'ROOT_FOLDER', 'SUBFOLDER', False, 'foldername1')
