@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using MathNet.Numerics.Statistics;
 
 namespace ConsoleApp
 {
@@ -34,6 +35,23 @@ namespace ConsoleApp
             value = Math.Round(Convert.ToDouble(item), 0);
 
             Console.WriteLine($"{value}");
+        }
+
+        public static void calcPercentile()
+        {
+            //double[] data = { 3, 1, 5, 7, 9 };
+            double[] data = { 623.00, 623.00, 623.00, 626.00, 628.00, 628.00, 626.00, 634.00, 635.00, 500.00, 200.00 };
+
+            // Calculate percentiles
+            double p50 = Statistics.Percentile(data, 50); // median
+            double p25 = Statistics.Percentile(data, 25);
+            double p90 = Statistics.Percentile(data, 90);
+            double p10 = Statistics.Percentile(data, 10);
+
+            Console.WriteLine($"10th percentile: {p10}");
+            Console.WriteLine($"25th percentile: {p25}");
+            Console.WriteLine($"50th percentile (median): {p50}");
+            Console.WriteLine($"90th percentile: {p90}");
         }
 
 
@@ -371,6 +389,15 @@ namespace ConsoleApp
             rsa.FromXmlString(pDecryptXML);
 
             Console.WriteLine(EncryptDecrypt.Decrypt(enc, rsa.ExportParameters(true)));
+        }
+        public static void CustomEncrypt(string enc)
+        {
+            var rsa = new RSACryptoServiceProvider(2048);
+            var pXML = EncryptDecrypt.GetDecryptXML(true);
+            var pDecryptXML = EncryptDecrypt.DecryptObfuscate(pXML);
+            rsa.FromXmlString(pDecryptXML);
+
+            Console.WriteLine(EncryptDecrypt.Encrypt(enc, rsa.ExportParameters(true)));
         }
 
     }
